@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% set active_page = 'reports' %}
+{% block title %}Reports · yerscan{% endblock %}
+{% block content %}
+<section class="page-intro"><div><div class="eyebrow">NETWORK EXPOSURE MONITOR</div><h1>Scan reports<span>.</span></h1><p>Open a report to inspect the discovered attack surface, hosts, and vulnerability evidence.</p></div><label class="primary-upload">＋ Upload JSON report<input id="report-upload-alt" type="file" accept=".json,application/json" hidden></label></section>
+<section class="panel report-hero"><div><div class="section-kicker">REPORT LIBRARY</div><h2>{{ reports|length }} assessment{% if reports|length != 1 %}s{% endif %} available</h2><p>Reports are read from <code>{{ report_dir }}</code> and sorted by scan timestamp.</p></div><div class="hero-mark">⌁</div></section>
+<section class="report-grid">{% for item in reports %}<a class="report-card" href="{{ url_for('report_detail', name=item.name) }}"><div class="report-card-top"><span class="status-dot"></span><span class="report-date">{{ item.scan_time|replace('T', ' · ') }}</span><span class="report-open">→</span></div><h3>{{ item.target }}</h3><code>{{ item.name }}</code><div class="report-stats"><span><b>{{ item.hosts_alive }}</b> hosts alive</span><span><b>{{ item.open_ports }}</b> open ports</span><span><b>{{ item.cves_found }}</b> CVEs</span></div><div class="report-risk">{{ item.risk_summary }}</div></a>{% else %}<div class="empty-panel"><div class="empty-symbol">◌</div><h2>No JSON reports yet</h2><p>Upload a report from yerscan.py to populate the workspace.</p></div>{% endfor %}</section>
+{% endblock %}

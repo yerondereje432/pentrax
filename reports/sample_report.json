@@ -1,0 +1,44 @@
+{
+  "target": "192.168.1.0/24",
+  "scan_time": "2026-08-07T03:47:39",
+  "duration_seconds": 127.3,
+  "scan_type": "syn",
+  "ports_scanned": 65535,
+  "hosts_alive": 3,
+  "hosts_with_ports": 3,
+  "total_open_ports": 7,
+  "cves_found": 3,
+  "vulns_found": 3,
+  "results": {
+    "192.168.1.10": {
+      "mac": "00:11:22:33:44:55",
+      "risk_score": 94,
+      "risk_level": "CRITICAL",
+      "vulns": [{"id": "CVE-2017-0144", "title": "Microsoft SMBv1 remote code execution", "description": "EternalBlue allows remote code execution through SMBv1.", "cvss": {"base_score": 9.8, "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", "severity": "CRITICAL"}, "cis": {"id": "CIS-2.3", "title": "Disable SMBv1", "level": "Level 1", "description": "Legacy file sharing protocol detected.", "remediation": "Disable SMBv1 and apply current security updates."}, "risk_level": "CRITICAL", "affected_service": "SMB", "affected_port": 445, "evidence": "SMBv1 dialect accepted by the service.", "remediation": "Patch the host and disable SMBv1.", "references": ["https://msrc.microsoft.com/update-guide/vulnerability/CVE-2017-0144"]}],
+      "ports": [
+        {"port": 445, "protocol": "tcp", "state": "open", "service": "SMB", "version": "Windows Server 2012 R2", "risk_level": "CRITICAL", "risk_reason": "EternalBlue exposure", "cves": [{"cve": "CVE-2017-0144", "severity": "CRITICAL", "cvss_score": 9.8, "description": "EternalBlue SMB RCE"}], "vulns": [], "deep": {}, "extra": {}},
+        {"port": 3389, "protocol": "tcp", "state": "open", "service": "RDP", "version": "Microsoft Terminal Services", "risk_level": "HIGH", "risk_reason": "Remote administration exposed", "cves": [], "vulns": [], "deep": {}, "extra": {}}
+      ]
+    },
+    "192.168.1.24": {
+      "mac": "58:EF:68:19:20:BD",
+      "risk_score": 78,
+      "risk_level": "HIGH",
+      "vulns": [{"id": "CVE-2021-32625", "title": "Redis authentication bypass", "description": "Redis is reachable without authentication and may expose application data.", "cvss": {"base_score": 8.8, "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", "severity": "HIGH"}, "cis": {"id": "CIS-5.1", "title": "Require Redis authentication", "level": "Level 1", "description": "Redis should not be exposed to untrusted networks.", "remediation": "Bind Redis to a protected interface and require authentication."}, "risk_level": "HIGH", "affected_service": "Redis", "affected_port": 6379, "evidence": "PING returned PONG without authentication.", "remediation": "Require authentication and restrict network access.", "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-32625"]}],
+      "ports": [
+        {"port": 6379, "protocol": "tcp", "state": "open", "service": "Redis", "version": "Redis 6.0.1", "risk_level": "HIGH", "risk_reason": "Unauthenticated database", "cves": [{"cve": "CVE-2021-32625", "severity": "HIGH", "cvss_score": 8.8, "description": "Redis auth bypass"}], "vulns": [], "deep": {}, "extra": {}},
+        {"port": 8080, "protocol": "tcp", "state": "open", "service": "HTTP-Alt", "version": "Tomcat 9.0.37", "risk_level": "MEDIUM", "risk_reason": "Management endpoint", "cves": [], "vulns": [], "deep": {}, "extra": {}}
+      ]
+    },
+    "192.168.1.44": {
+      "mac": "A8:5E:45:9C:10:2A",
+      "risk_score": 34,
+      "risk_level": "MEDIUM",
+      "vulns": [],
+      "ports": [
+        {"port": 80, "protocol": "tcp", "state": "open", "service": "HTTP", "version": "Apache httpd 2.4.29", "risk_level": "MEDIUM", "risk_reason": "Version disclosure", "cves": [{"cve": "CVE-2021-41773", "severity": "HIGH", "cvss_score": 7.5, "description": "Apache path traversal and RCE"}], "vulns": [], "deep": {"server": "Apache/2.4.29", "paths": ["/admin", "/server-status"]}, "extra": {}},
+        {"port": 631, "protocol": "tcp", "state": "open", "service": "IPP", "version": "CUPS 2.2.7", "risk_level": "INFO", "risk_reason": "Printing service", "cves": [], "vulns": [], "deep": {}, "extra": {}}
+      ]
+    }
+  }
+}
