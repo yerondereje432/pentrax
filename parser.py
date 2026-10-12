@@ -12,6 +12,12 @@ RISK_LEVELS = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
 RISK_RANK = {level: len(RISK_LEVELS) - index for index, level in enumerate(RISK_LEVELS)}
 
 
+def finding_key(row: dict[str, Any]) -> str:
+    """Return the stable identity used to track remediation for a finding."""
+    identifier = str(row.get("cve_id") or row.get("description") or "").strip()
+    return "|".join((str(row.get("host_ip") or "").strip(), str(row.get("port") or "").strip(), identifier))
+
+
 def load_report(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as report_file:
         report = json.load(report_file)

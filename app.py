@@ -8,18 +8,21 @@ import os
 import secrets
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 
-from parser import compare_reports, load_report, report_metadata, summarise_report
+from parser import compare_reports, finding_key, flatten_findings, load_report, report_metadata, summarise_report
 
 
 BASE_DIR = Path(__file__).resolve().parent
 REPORT_DIR = Path(os.environ.get("YERSCAN_REPORT_DIR", BASE_DIR / "reports"))
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
+STATUS_FILE = Path(os.environ.get("YERSCAN_STATUS_FILE", BASE_DIR / "statuses.json"))
+STATUS_VALUES = ("Open", "In Progress", "Resolved")
 
 app = Flask(__name__)
 app.config.from_mapping(
@@ -145,6 +148,50 @@ def safe_report_path(name: str) -> Path | None:
     return candidate
 
 
+def load_statuses() -> dict[str, str]:
+    """Load remediation statuses without modifying the read-only scan reports."""
+    if not STATUS_FILE.is_file():
+        return {}
+    try:
+        payload = json.loads(STATUS_FILE.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        app.logger.warning("Could not read remediation status file: %s", STATUS_FILE)
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {str(key): value for key, value in payload.items() if value in STATUS_VALUES}
+
+
+def save_statuses(statuses: dict[str, str]) -> None:
+    """Atomically save statuses so a partial write cannot corrupt the local store."""
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=STATUS_FILE.parent,
+            prefix=f".{STATUS_FILE.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            json.dump(statuses, temporary_file, indent=2, sort_keys=True)
+            temporary_file.write("\n")
+        temporary_path.replace(STATUS_FILE)
+    finally:
+        if temporary_path and temporary_path.exists():
+            temporary_path.unlink()
+
+
+def finding_statuses(summary: dict) -> None:
+    """Attach display-only keys and statuses to flattened findings."""
+    statuses = load_statuses()
+    for row in summary["findings"]:
+        row["finding_key"] = finding_key(row)
+        row["status"] = statuses.get(row["finding_key"], "Open")
+
+
 @app.get("/")
 def reports_list():
     return render_template("reports_list.html", reports=available_reports())
@@ -238,7 +285,9 @@ def findings(name: str):
     if path is None or not path.is_file():
         return redirect(url_for("reports_list"))
     report = load_report(path)
-    return render_template("findings.html", report=report, report_name=name, summary=summarise_report(report), reports=available_reports())
+    summary = summarise_report(report)
+    finding_statuses(summary)
+    return render_template("findings.html", report=report, report_name=name, summary=summary, reports=available_reports())
 
 
 @app.get("/api/reports")
@@ -253,6 +302,25 @@ def report_api(name: str):
         return jsonify({"error": "Report not found"}), 404
     report = load_report(path)
     return jsonify({"name": name, "report": report, "summary": summarise_report(report)})
+
+
+@app.post("/api/findings/status")
+def update_finding_status():
+    payload = request.get_json(silent=True) or {}
+    key = str(payload.get("key") or "").strip()
+    status = payload.get("status")
+    if not key:
+        return jsonify({"error": "A finding key is required"}), 400
+    if status not in STATUS_VALUES:
+        return jsonify({"error": "Status must be Open, In Progress, or Resolved"}), 400
+    statuses = load_statuses()
+    statuses[key] = status
+    try:
+        save_statuses(statuses)
+    except OSError:
+        app.logger.exception("Could not save remediation status file: %s", STATUS_FILE)
+        return jsonify({"error": "Could not save remediation status"}), 500
+    return jsonify({"key": key, "status": status})
 
 
 @app.post("/api/reports/upload")
@@ -323,16 +391,21 @@ def download_pdf(name: str):
 
 @app.get("/reports/<name>/findings.csv")
 def findings_csv(name: str):
-    from parser import flatten_findings
-
     path = safe_report_path(name)
     if path is None or not path.is_file():
         return jsonify({"error": "Report not found"}), 404
     output = io.StringIO()
-    fields = ["host_ip", "port", "service", "version", "risk_level", "cve_id", "cvss_score", "description"]
+    statuses = load_statuses()
+    fields = ["host_ip", "port", "service", "version", "risk_level", "cve_id", "cvss_score", "description", "status"]
     writer = csv.DictWriter(output, fieldnames=fields)
     writer.writeheader()
-    writer.writerows({key: row.get(key, "") for key in fields} for row in flatten_findings(load_report(path)))
+    writer.writerows(
+        {
+            **{key: row.get(key, "") for key in fields if key != "status"},
+            "status": statuses.get(finding_key(row), "Open"),
+        }
+        for row in flatten_findings(load_report(path))
+    )
     return send_file(io.BytesIO(output.getvalue().encode("utf-8")), as_attachment=True, download_name=f"{Path(name).stem}_findings.csv", mimetype="text/csv")
 
 
