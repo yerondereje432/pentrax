@@ -77,11 +77,25 @@
       </div>
     </div>
 
-    <!-- Right: Privileges Badge & Action Button -->
-    <div class="flex items-center space-x-4">
-      <div id="sys-cap-badge" class="flex items-center space-x-2 text-xs px-3.5 py-1.5 rounded-full bg-pentrax-850 border border-pentrax-700">
+    <!-- Right: Privileges Badge, User Auth & Action Button -->
+    <div class="flex items-center space-x-3 sm:space-x-4">
+      <div id="sys-cap-badge" class="hidden sm:flex items-center space-x-2 text-xs px-3.5 py-1.5 rounded-full bg-pentrax-850 border border-pentrax-700">
         <span class="w-2 h-2 rounded-full bg-slate-400"></span>
-        <span class="text-slate-400 font-mono">Checking system privileges...</span>
+        <span class="text-slate-400 font-mono">Checking privileges...</span>
+      </div>
+
+      <!-- User RBAC Profile / Sign In -->
+      <div id="auth-status-container" class="flex items-center space-x-2">
+        <button id="btn-login-trigger" onclick="openLoginModal()" class="px-3 py-1.5 bg-pentrax-800 hover:bg-pentrax-700 text-slate-200 rounded-lg text-xs font-semibold border border-pentrax-700 flex items-center space-x-1.5 transition">
+          <i class="fa-solid fa-user-lock text-pentrax-red"></i>
+          <span>Sign In</span>
+        </button>
+        <div id="user-profile-badge" class="hidden flex items-center space-x-2 px-3 py-1.5 bg-pentrax-850 rounded-lg border border-pentrax-700 text-xs">
+          <i class="fa-solid fa-circle-user text-pentrax-red"></i>
+          <span id="user-display-name" class="font-mono text-slate-200 font-bold"></span>
+          <span id="user-role-badge" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-pentrax-950 text-slate-400 border border-slate-700"></span>
+          <button onclick="handleLogout()" class="text-slate-400 hover:text-red-400 ml-1.5 transition" title="Sign out"><i class="fa-solid fa-right-from-bracket"></i></button>
+        </div>
       </div>
 
       <button onclick="openNewScanModal()" class="px-4 py-2 bg-gradient-to-r from-red-600 via-pentrax-red to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-lg font-bold text-xs shadow-lg glow-red flex items-center space-x-2 transition-all transform hover:-translate-y-0.5">
@@ -473,6 +487,44 @@
     </div>
   </div>
 
+  <!-- RBAC LOGIN MODAL -->
+  <div id="modal-login" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-pentrax-900 border border-pentrax-700 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-pentrax-700">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-shield-halved text-pentrax-red"></i>
+          <h3 class="text-sm font-bold text-white tracking-wide uppercase">PENTRAX Authentication</h3>
+        </div>
+        <button onclick="closeLoginModal()" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form id="form-login" onsubmit="handleLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Username</label>
+          <input type="text" id="login-username" required placeholder="admin or operator" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pentrax-red font-mono">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Password</label>
+          <input type="password" id="login-password" required placeholder="••••••••" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pentrax-red font-mono">
+        </div>
+
+        <div id="login-error-msg" class="hidden text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-lg border border-rose-800"></div>
+
+        <div class="text-[11px] text-slate-400 bg-pentrax-950 p-2.5 rounded-lg border border-pentrax-800 space-y-1">
+          <p class="font-semibold text-slate-300">Default Credentials:</p>
+          <p class="font-mono text-[10px]">Administrator: <span class="text-pentrax-red font-bold">admin</span> / <span class="text-slate-300">pentrax1337</span></p>
+          <p class="font-mono text-[10px]">Operator: <span class="text-amber-400 font-bold">operator</span> / <span class="text-slate-300">operator123</span></p>
+        </div>
+
+        <div class="flex justify-end space-x-2 pt-2">
+          <button type="button" onclick="closeLoginModal()" class="px-4 py-2 bg-pentrax-800 hover:bg-pentrax-750 text-slate-300 text-xs font-semibold rounded-lg">Cancel</button>
+          <button type="submit" id="btn-submit-login" class="px-5 py-2 bg-gradient-to-r from-red-600 to-pentrax-red hover:from-red-500 text-white text-xs font-bold rounded-lg shadow-lg">Sign In</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- JAVASCRIPT APPLICATION LOGIC -->
   <script>
     let activeScanId = null;
@@ -480,11 +532,105 @@
     let currentScanData = null;
     let systemCaps = null;
     let attackNetwork = null;
+    let currentUser = null;
 
     document.addEventListener('DOMContentLoaded', async () => {
+      await checkAuthStatus();
       await fetchSystemCapabilities();
       await loadScanHistory();
     });
+
+    async function checkAuthStatus() {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          currentUser = await res.json();
+          renderUserBadge();
+        } else {
+          currentUser = null;
+          renderUserBadge();
+        }
+      } catch (e) {
+        currentUser = null;
+        renderUserBadge();
+      }
+    }
+
+    function renderUserBadge() {
+      const loginBtn = document.getElementById('btn-login-trigger');
+      const profileBadge = document.getElementById('user-profile-badge');
+      if (currentUser) {
+        loginBtn.classList.add('hidden');
+        profileBadge.classList.remove('hidden');
+        document.getElementById('user-display-name').innerText = currentUser.username;
+        const roleBadge = document.getElementById('user-role-badge');
+        roleBadge.innerText = currentUser.role;
+        if (currentUser.role === 'admin') {
+          roleBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-pentrax-darkred text-pentrax-red border border-pentrax-red/40';
+        } else if (currentUser.role === 'operator') {
+          roleBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-amber-950 text-amber-400 border border-amber-600/40';
+        } else {
+          roleBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-pentrax-950 text-slate-400 border border-slate-700';
+        }
+      } else {
+        loginBtn.classList.remove('hidden');
+        profileBadge.classList.add('hidden');
+      }
+    }
+
+    function openLoginModal() {
+      document.getElementById('login-error-msg').classList.add('hidden');
+      document.getElementById('modal-login').classList.remove('hidden');
+    }
+
+    function closeLoginModal() {
+      document.getElementById('modal-login').classList.add('hidden');
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value;
+      const errorEl = document.getElementById('login-error-msg');
+      const submitBtn = document.getElementById('btn-submit-login');
+
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Authenticating...';
+      errorEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorEl.innerText = data.error || 'Login failed';
+          errorEl.classList.remove('hidden');
+        } else {
+          currentUser = data.user;
+          renderUserBadge();
+          closeLoginModal();
+          await loadScanHistory();
+        }
+      } catch (err) {
+        errorEl.innerText = 'Network error during login';
+        errorEl.classList.remove('hidden');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Sign In';
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+      } catch (e) {}
+      currentUser = null;
+      renderUserBadge();
+      await loadScanHistory();
+    }
 
     async function fetchSystemCapabilities() {
       try {
@@ -994,7 +1140,12 @@
 
     async function deleteScanHistoryItem(scanId) {
       if (!confirm(`Permanently delete assessment ${scanId}?`)) return;
-      await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to delete scan: permission denied');
+        return;
+      }
       await loadScanHistory();
     }
 

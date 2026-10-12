@@ -23,6 +23,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import pentrax as ys
+from web.db import db_manager
 
 logger = logging.getLogger("pentrax.web.manager")
 
@@ -33,9 +34,10 @@ SCANS_DIR.mkdir(parents=True, exist_ok=True)
 class ScanInstance:
     """Represents a single scan job and its live lifecycle."""
 
-    def __init__(self, scan_id: str, config: Dict[str, Any]):
+    def __init__(self, scan_id: str, config: Dict[str, Any], owner_id: Optional[int] = None):
         self.id = scan_id
         self.config = config
+        self.owner_id = owner_id
         self.status = "pending"  # pending, running, completed, failed, stopped
         self.created_at = datetime.now().isoformat()
         self.completed_at: Optional[str] = None
@@ -96,6 +98,7 @@ class ScanInstance:
         """Convert scan state to dictionary representation."""
         data = {
             "id": self.id,
+            "owner_id": self.owner_id,
             "target": self.config.get("target"),
             "status": self.status,
             "created_at": self.created_at,
@@ -131,66 +134,81 @@ class ScanManager:
         return self._scan_lock.locked() or any(s.status == "running" for s in self.scans.values())
 
     def _load_persisted_scans(self):
-        """Load past scans from the scans/ directory."""
-        for scan_file in SCANS_DIR.glob("*.json"):
-            try:
-                with open(scan_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    scan_id = data.get("id") or scan_file.stem
-                    instance = ScanInstance(scan_id, data.get("config", {}))
-                    instance.status = data.get("status", "completed")
-                    instance.created_at = data.get("created_at", instance.created_at)
-                    instance.completed_at = data.get("completed_at")
-                    instance.duration_seconds = data.get("duration_seconds", 0.0)
-                    instance.current_phase = data.get("current_phase", instance.current_phase)
-                    instance.progress = data.get("progress", instance.progress)
-                    instance.logs = data.get("logs", [])
-                    instance.live_hosts = data.get("live_hosts", [])
-                    instance.open_ports = data.get("open_ports", [])
-                    instance.result = data.get("result")
-                    instance.error = data.get("error")
-                    self.scans[scan_id] = instance
-            except Exception as e:
-                logger.warning(f"Could not load scan file {scan_file}: {e}")
+        """Load past scans from SQLite database pentrax.db."""
+        try:
+            db_scans = db_manager.list_scans(user=None)
+            for item in db_scans:
+                scan_id = item["id"]
+                full_scan = db_manager.get_scan(scan_id)
+                if not full_scan:
+                    continue
+                instance = ScanInstance(scan_id, full_scan.get("config", {}), owner_id=full_scan.get("owner_id"))
+                instance.status = full_scan.get("status", "completed")
+                instance.created_at = full_scan.get("created_at", instance.created_at)
+                instance.completed_at = full_scan.get("completed_at")
+                instance.duration_seconds = full_scan.get("duration_seconds", 0.0)
+                instance.logs = full_scan.get("logs", [])
+                instance.result = full_scan.get("result")
+                self.scans[scan_id] = instance
+        except Exception as e:
+            logger.warning(f"Could not load scans from SQLite: {e}")
 
     def save_scan(self, instance: ScanInstance):
-        """Persist a scan state to disk."""
-        target_path = SCANS_DIR / f"{instance.id}.json"
+        """Persist scan state to SQLite database."""
         try:
-            with open(target_path, "w", encoding="utf-8") as f:
-                json.dump(instance.to_dict(full=True), f, indent=2)
+            db_manager.save_scan(
+                scan_id=instance.id,
+                owner_id=instance.owner_id,
+                target=instance.config.get("target", ""),
+                status=instance.status,
+                config=instance.config,
+                summary=instance.result,
+                logs=instance.logs,
+                duration=instance.duration_seconds,
+                completed_at=instance.completed_at,
+            )
         except Exception as e:
-            logger.error(f"Failed to persist scan {instance.id}: {e}")
+            logger.error(f"Failed to persist scan {instance.id} to SQLite: {e}")
 
-    def list_scans(self) -> List[Dict[str, Any]]:
-        """List all scans ordered from newest to oldest."""
-        sorted_scans = sorted(
-            self.scans.values(),
-            key=lambda s: s.created_at,
-            reverse=True,
-        )
-        return [s.to_dict(full=False) for s in sorted_scans]
+    def list_scans(self, user: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """List all scans respecting RBAC user ownership."""
+        # Query SQLite for consistent RBAC filtering
+        try:
+            return db_manager.list_scans(user=user)
+        except Exception as e:
+            logger.error(f"Failed to list scans from DB: {e}")
+            sorted_scans = sorted(
+                self.scans.values(),
+                key=lambda s: s.created_at,
+                reverse=True,
+            )
+            return [s.to_dict(full=False) for s in sorted_scans]
 
     def get_scan(self, scan_id: str, full: bool = True) -> Optional[ScanInstance]:
         """Fetch a scan by its ID."""
-        return self.scans.get(scan_id)
-
-    def delete_scan(self, scan_id: str) -> bool:
-        """Cancel if running and delete scan from memory and disk."""
         instance = self.scans.get(scan_id)
         if not instance:
-            return False
-        if instance.status == "running":
+            # Fallback load from SQLite
+            data = db_manager.get_scan(scan_id)
+            if data:
+                instance = ScanInstance(scan_id, data.get("config", {}), owner_id=data.get("owner_id"))
+                instance.status = data.get("status", "completed")
+                instance.created_at = data.get("created_at", instance.created_at)
+                instance.completed_at = data.get("completed_at")
+                instance.duration_seconds = data.get("duration_seconds", 0.0)
+                instance.logs = data.get("logs", [])
+                instance.result = data.get("result")
+                self.scans[scan_id] = instance
+        return instance
+
+    def delete_scan(self, scan_id: str, user: Optional[Dict[str, Any]] = None) -> bool:
+        """Cancel if running and delete scan from memory and SQLite database."""
+        instance = self.scans.get(scan_id)
+        if instance and instance.status == "running":
             self.cancel_scan(scan_id)
         
         self.scans.pop(scan_id, None)
-        json_file = SCANS_DIR / f"{scan_id}.json"
-        if json_file.exists():
-            try:
-                json_file.unlink()
-            except OSError:
-                pass
-        return True
+        return db_manager.delete_scan(scan_id, user=user)
 
     def cancel_scan(self, scan_id: str) -> bool:
         """Cancel an in-progress scan."""
@@ -208,11 +226,12 @@ class ScanManager:
         instance.broadcast({"type": "status_change", "status": "stopped"})
         return True
 
-    def create_scan(self, config: Dict[str, Any]) -> ScanInstance:
-        """Create and queue a new scan instance."""
+    def create_scan(self, config: Dict[str, Any], owner_id: Optional[int] = None) -> ScanInstance:
+        """Create and queue a new scan instance with owner_id."""
         scan_id = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
-        instance = ScanInstance(scan_id, config)
+        instance = ScanInstance(scan_id, config, owner_id=owner_id)
         self.scans[scan_id] = instance
+        self.save_scan(instance)
         return instance
 
     def start_scan(self, instance: ScanInstance) -> asyncio.Task:

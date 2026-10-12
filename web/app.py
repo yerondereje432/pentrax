@@ -48,14 +48,25 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
 
 # Ensure ROOT_DIR in sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
-
+from pentrax import *
 import pentrax as ys
 from web.manager import scan_manager, ScanInstance
+from web.db import db_manager
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def get_current_user(request) -> Optional[Dict[str, Any]]:
+    """Resolve active user from session cookie or X-Session-Token header."""
+    token = request.headers.get("X-Session-Token")
+    if not token:
+        token = request.cookies.get("pentrax_session")
+    if token:
+        user = db_manager.get_user_from_session(token)
+        if user:
+            return user
+    return None
 
 
 async def index(request):
@@ -91,13 +102,62 @@ async def get_system_capabilities(request):
     })
 
 
+async def api_login(request):
+    """Authenticate user with username and password, issuing session token."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    username = body.get("username", "")
+    password = body.get("password", "")
+    user = db_manager.authenticate_user(username, password)
+    if not user:
+        return JSONResponse({"error": "Invalid username or password"}, status_code=401)
+    
+    token = db_manager.create_session(user)
+    db_manager.log_audit(user["id"], "LOGIN", ip=request.client.host if request.client else None)
+    response = JSONResponse({
+        "message": "Authentication successful",
+        "user": user,
+        "token": token
+    })
+    response.set_cookie("pentrax_session", token, httponly=True, samesite="lax", max_age=86400 * 7)
+    return response
+
+
+async def api_logout(request):
+    """Revoke user session."""
+    user = get_current_user(request)
+    token = request.headers.get("X-Session-Token") or request.cookies.get("pentrax_session")
+    if token:
+        db_manager.revoke_session(token)
+    if user:
+        db_manager.log_audit(user["id"], "LOGOUT", ip=request.client.host if request.client else None)
+    response = JSONResponse({"message": "Logged out successfully"})
+    response.delete_cookie("pentrax_session")
+    return response
+
+
+async def api_current_user(request):
+    """Return currently authenticated user profile."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"authenticated": False, "user": None}, status_code=401)
+    return JSONResponse({"authenticated": True, "user": user})
+
+
 async def list_scans(request):
-    """List all past and active scans."""
-    return JSONResponse(scan_manager.list_scans())
+    """List scans filtered by user role (Admin sees all; Operator sees only own)."""
+    current_user = get_current_user(request)
+    return JSONResponse(scan_manager.list_scans(user=current_user))
 
 
 async def start_scan(request):
-    """Validate input parameters and start a new scan job."""
+    """Validate input parameters and start a new scan job respecting RBAC roles."""
+    current_user = get_current_user(request)
+    if current_user and current_user.get("role") == "viewer":
+        return JSONResponse({"error": "Forbidden: Viewers are not authorized to launch scans"}, status_code=403)
+
     try:
         body = await request.json()
     except Exception:
@@ -143,8 +203,11 @@ async def start_scan(request):
         "authorized": bool(body.get("authorized", True)),
     }
 
-    instance = scan_manager.create_scan(config)
+    owner_id = current_user.get("id") if current_user else None
+    instance = scan_manager.create_scan(config, owner_id=owner_id)
     scan_manager.start_scan(instance)
+    if current_user:
+        db_manager.log_audit(current_user["id"], "START_SCAN", target=target, ip=request.client.host if request.client else None)
 
     return JSONResponse({
         "message": "Scan initiated",
@@ -172,10 +235,16 @@ async def stop_scan(request):
 
 async def delete_scan(request):
     """Delete a scan from history."""
+    current_user = get_current_user(request)
+    if current_user and current_user.get("role") == "viewer":
+        return JSONResponse({"error": "Forbidden: Viewers cannot delete scan records"}, status_code=403)
+
     scan_id = request.path_params.get("scan_id")
-    success = scan_manager.delete_scan(scan_id)
+    success = scan_manager.delete_scan(scan_id, user=current_user)
     if not success:
-        return JSONResponse({"error": "Scan not found"}, status_code=404)
+        return JSONResponse({"error": "Scan not found or permission denied"}, status_code=404)
+    if current_user:
+        db_manager.log_audit(current_user["id"], "DELETE_SCAN", target=scan_id, ip=request.client.host if request.client else None)
     return JSONResponse({"message": "Scan deleted", "scan_id": scan_id})
 
 
@@ -299,6 +368,9 @@ async def scan_websocket(websocket: WebSocket):
 
 routes = [
     Route("/", endpoint=index, methods=["GET"]),
+    Route("/api/auth/login", endpoint=api_login, methods=["POST"]),
+    Route("/api/auth/logout", endpoint=api_logout, methods=["POST"]),
+    Route("/api/auth/me", endpoint=api_current_user, methods=["GET"]),
     Route("/api/system/capabilities", endpoint=get_system_capabilities, methods=["GET"]),
     Route("/api/scans", endpoint=list_scans, methods=["GET"]),
     Route("/api/scans/start", endpoint=start_scan, methods=["POST"]),

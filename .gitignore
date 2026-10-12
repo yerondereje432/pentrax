@@ -45,6 +45,14 @@ pentrax_*.html
 *.sublime-workspace
 *.sublime-project
 
+# Databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
 # Operating System files
 .DS_Store
 Thumbs.db
+
