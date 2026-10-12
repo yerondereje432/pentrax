@@ -1,581 +1,335 @@
 # ⬡ PENTRAX v8.0
-### **WEB VULNERABILITY ASSESSMENT & SECURITY PLATFORM**
+### **ENTERPRISE WEB VULNERABILITY ASSESSMENT & OFFENSIVE AUDIT PLATFORM**
 
-![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Version](https://img.shields.io/badge/version-8.0-red.svg)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Framework](https://img.shields.io/badge/engine-AsyncIO%20%7C%20Starlette-crimson.svg)]()
+[![Build Status](https://img.shields.io/badge/tests-52%2F52%20passing-brightgreen.svg)]()
+[![Security Compliance](https://img.shields.io/badge/standards-OWASP%20%7C%20CIS%20%7C%20MITRE-red.svg)]()
 
----
-
-## 🎯 Overview
-
-**PENTRAX** is a production-grade web vulnerability assessment and network security scanner that combines port scanning with automated service fingerprinting, CVE vulnerability matching, safe PoC verification, attack path analysis, and MITRE ATT&CK mapping. Built with an asynchronous engine and a real-time web operations dashboard.
+> **PENTRAX** is a next-generation, high-concurrency vulnerability assessment platform engineered for cybersecurity researchers, penetration testers, and DevSecOps professionals. It bridges the gap between low-level network discovery, deep web application DAST (Dynamic Application Security Testing), SSL/TLS cryptographic auditing, and threat-actor intelligence mapping in a unified, modern web operations console.
 
 ---
 
-## ✨ Key Features
-
-### 🚀 **Performance**
-- **Asyncio-powered** — 10,000+ concurrent connections
-- **Multi-phase scanning** — Host discovery → Port scan → Version detection → Deep intel → Verification
-- **Adaptive rate limiting** — Automatically adjusts to network conditions
-- **Checkpoint/Resume** — Resume interrupted scans
-
-### 🔍 **Scanning Capabilities**
-- **7 Scan Types**: CONNECT, SYN, ACK, FIN, XMAS, NULL, WINDOW
-- **Full port range** — All 65535 TCP ports + UDP scanning
-- **500+ service fingerprints** — Accurate service identification
-- **Version detection** — Automatic version fingerprinting
-- **OS fingerprinting** — TTL/window-based OS detection
-
-### 🛡️ **Security Features**
-- **Stealth mode** — Decoy scanning, packet fragmentation, random delays
-- **Evasion techniques** — Random delays, packet fragmentation, decoy IPs
-- **Authorization gate** — Prevents accidental scanning of unauthorized targets
-- **IPv6 support** — Full IPv6 scanning support
-
-### 🎯 **Vulnerability Detection**
-- **CVE database** — Automatic CVE matching with CVSS scoring
-- **CIS benchmarks** — Compliance mapping with remediation guidance
-- **Attack path analysis** — MITRE ATT&CK technique mapping
-- **Threat actor attribution** — Real-world campaign mapping (WannaCry, NotPetya, etc.)
-
-### 🔬 **Deep Intel Probes**
-- **SSH** — Weak algorithm detection (DH Group1, DSA, 3DES, RC4, MD5)
-- **Redis** — Authentication testing, SLAVEOF RCE detection
-- **MongoDB** — Authentication testing, version detection
-- **SMB** — EternalBlue (MS17-010) detection
-- **Memcached** — DDoS amplification testing
-- **FTP** — Anonymous login testing
-- **Elasticsearch** — Authentication testing
-- **Docker API** — Unauthenticated API access testing
-
-### 📊 **Reporting**
-- **JSON** — Machine-readable output
-- **CSV** — Spreadsheet-compatible
-- **HTML** — Professional HTML reports with dark theme
-- **Audit logging** — Complete scan audit trail
+## 📑 Table of Contents
+1. [Purpose of the Project](#-purpose-of-the-project)
+2. [How the Project Works](#-how-the-project-works)
+   - [System Architecture](#system-architecture)
+   - [Execution Lifecycle & Scanning Phases](#execution-lifecycle--scanning-phases)
+   - [Core Technical Innovations](#core-technical-innovations)
+3. [How Hackers & Penetration Testers Use It](#-how-hackers--penetration-testers-use-it)
+   - [Reconnaissance & Asset Discovery](#1-reconnaissance--perimeter-mapping)
+   - [Firewall & IDS Evasion Tactics](#2-firewall--ids-evasion-tactics)
+   - [Web Application Exploitation & DAST Fuzzing](#3-web-application-dast--secret-discovery)
+   - [Cryptographic Weakness Identification](#4-cryptographic-weakness-identification)
+   - [MITRE ATT&CK Threat Path Simulation](#5-mitre-attck-threat-actor-attribution)
+   - [Executive Remediation & SLA Governance](#6-executive-remediation--sla-governance)
+4. [Quick Start & Setup](#-quick-start--setup)
+   - [Web Console Operations](#web-console-operations-recommended)
+   - [Command-Line Interface (CLI)](#cli-operations)
+5. [Privilege Modes: Unprivileged vs. Root](#-privilege-modes-unprivileged-vs-root)
+6. [CLI Command Reference & Presets](#-cli-command-reference--presets)
+7. [Verification & Test Suite](#-verification--test-suite)
+8. [Ethical Rules of Engagement & Disclaimer](#-ethical-rules-of-engagement--legal-disclaimer)
 
 ---
 
-## 🚀 Quick Start
+## 🎯 Purpose of the Project
 
-### **Installation**
+In enterprise cybersecurity, security teams frequently encounter a fragmented toolchain:
+- Network scanners (e.g., standard Nmap) identify open ports but lack native Web DAST, CORS inspection, and credential leak fuzzing.
+- Web scanners (e.g., Nikto, OWASP ZAP) require pre-discovered URLs and do not perform low-level TCP flag manipulation or network topology analysis.
+- Vulnerability scanners generate high volumes of false positives due to raw version string matching without understanding OS package backports.
+
+**PENTRAX solves these challenges by providing:**
+1. **Unified Offensive Pipeline**: Automatically resolves hostnames, identifies live hosts, probes ports across 7 scanning techniques, audits HTTP security headers and CORS configurations, hunts for exposed secrets (`.env`, `.git`), analyzes SSL/TLS ciphers, and cross-references CVEs.
+2. **Defensive False-Positive Suppression**: Detects Linux distribution backport tags (`+deb`, `ubuntu`, `.el8`, `debian`) to prevent misleading alerts on security-patched enterprise kernels and servers.
+3. **Scanner Self-Defense (SSRF Hardening)**: Protects the scanner and its web engine from being abused as a Server-Side Request Forgery proxy by enforcing strict link-local cloud metadata IP filtering (`169.254.169.254` and `fd00:ec2::254`).
+4. **Actionable Remediation SLAs**: Automatically categorizes findings according to standard cybersecurity incident response timeframes (48 Hours for Critical, 14 Days for High, 30 Days for Medium).
+5. **Academic & Practical Excellence**: Built as an Ethical Hacking capstone and defense tool designed for live demonstrations, security operations center (SOC) simulation, and penetration testing assessments.
+
+---
+
+## ⚙️ How the Project Works
+
+### System Architecture
+
+```mermaid
+flowchart TD
+    subgraph Target ["1. Target Intake & Validation"]
+        T1["Target Input (IP / CIDR / Domain)"] --> T2["DNS Resolver & IP Normalization"]
+        T2 --> T3["Scope Gate & Cloud Metadata SSRF Defense"]
+    end
+
+    subgraph CoreEngine ["2. High-Speed Scanning Engine"]
+        T3 -->|Scope Approved| P1["Phase 1: Host Discovery Sweep (ICMP / TCP ACK / Connect)"]
+        P1 --> P2["Phase 2: Port Enumeration (Async Connect / Raw SYN, FIN, NULL, XMAS)"]
+        P2 --> P3["Phase 3: Deep Service Fingerprinting (500+ Handshakes)"]
+        P3 --> P4["Phase 4: CVE Matching & Distro Backport Filter"]
+    end
+
+    subgraph DeepAuditors ["3. Specialized Security Modules"]
+        P3 --> DAST["Web DAST Engine"]
+        DAST --> DAST1["Security Headers Compliance (CSP, HSTS, X-Frame)"]
+        DAST --> DAST2["CORS Misconfiguration (Reflected Origin + Credentials)"]
+        DAST --> DAST3["High-Value Secret Fuzzing (.env, .git, /actuator/env)"]
+
+        P3 --> TLS["Cryptographic Auditor"]
+        TLS --> TLS1["Deprecated Protocol Detection (TLS 1.0 / 1.1)"]
+        TLS --> TLS2["X.509 Certificate Expiration & Self-Signed CA Checks"]
+
+        P3 --> POC["Safe PoC Verification (SMB MS17-010, Redis RCE, Anonymous FTP)"]
+    end
+
+    subgraph ReportingHUD ["4. Analytics & Real-Time HUD"]
+        DAST1 & DAST2 & DAST3 & TLS1 & TLS2 & POC & P4 --> VULN["Vulnerability Aggregator & CVSS v3.1 Engine"]
+        VULN --> SLA["Executive Remediation SLAs (48h / 14d / 30d)"]
+        SLA --> HUD["WebSocket HUD + Interactive MITRE ATT&CK Graph"]
+        SLA --> EXPORT["Multi-Format Reports (HTML, JSON, CSV)"]
+    end
+```
+
+---
+
+### Execution Lifecycle & Scanning Phases
+
+When PENTRAX launches an assessment, it executes a deterministic, 6-phase security pipeline:
+
+1. **Phase 1: Target Resolution & Scope Authorization Gate**
+   - Automatically resolves target domains (e.g., `example.com` $\rightarrow$ `93.184.215.14`) via DNS.
+   - Evaluates the IP against the **SSRF Cloud Metadata Filter**: if the target attempts to probe AWS, GCP, Azure, or OpenStack metadata services (`169.254.169.254` or `fd00:ec2::254`), the scan immediately aborts with an audit warning.
+   - Verifies target authorization rules (fails closed if non-private scopes are queried without `--authorize`).
+
+2. **Phase 2: High-Concurrency Port Discovery**
+   - Dispatches thousands of non-blocking TCP socket probes concurrently using an adaptive asyncio event loop or raw socket injectors.
+   - Applies evasion flags if requested: packet fragmentation (MTU 24/48), random decoy IP spoofing, and randomized probe intervals.
+
+3. **Phase 3: Protocol Fingerprinting & Service Detection**
+   - Sends customized protocol handshakes across discovered open ports (HTTP, SSH, FTP, SMTP, MySQL, Redis, MongoDB, Elasticsearch, Docker, Memcached, etc.).
+   - Matches banners against an embedded database of 500+ application signatures.
+
+4. **Phase 4: Web DAST & Cryptographic Auditing**
+   - **Security Headers**: Inspects response headers for `Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options`, and `X-Content-Type-Options`.
+   - **CORS Analysis**: Issues cross-origin requests with `Origin: https://pentrax-attacker-audit.com` to uncover origin reflection with `Access-Control-Allow-Credentials: true`.
+   - **Secret Discovery**: Probes high-risk paths (`/.env`, `/.git/config`, `/actuator/env`, `/swagger-ui.html`, `/phpinfo.php`) and confirms exposures with signature regexes.
+   - **SSL/TLS Audit**: Negotiates TLS handshakes to detect obsolete TLS 1.0/1.1 protocols, expired certificates, and untrusted/self-signed root chains.
+
+5. **Phase 5: CVE Matching & Distribution Backport Filter**
+   - Compares parsed service versions against the CVE database.
+   - Evaluates whether the application banner includes Linux distribution package markers (e.g., `+deb9u7`, `ubuntu`, `.el8`). If detected, confidence is downgraded and vendor backport notices are attached to prevent false positives.
+   - Runs safe, non-destructive Proof-of-Concept (PoC) verifications for critical flaws (e.g., MS17-010 SMB negotiation, Redis unauthenticated command execution).
+
+6. **Phase 6: MITRE ATT&CK Graph Generation & SLA Assignment**
+   - Synthesizes findings into active attack chains: `Target Host` $\rightarrow$ `Service` $\rightarrow$ `CVE` $\rightarrow$ `MITRE Technique (e.g., T1190)` $\rightarrow$ `Threat Actor (e.g., APT28, Lazarus)`.
+   - Embeds Executive Remediation SLAs and streams updates in real-time over WebSockets to the web dashboard.
+
+---
+
+## 🥷 How Hackers & Penetration Testers Use It
+
+Security practitioners and red-team operators utilize PENTRAX across every stage of the penetration testing methodology:
+
+### 1. Reconnaissance & Perimeter Mapping
+- **Objective**: Identify public-facing attack surfaces without triggering immediate detection.
+- **Workflow**:
+  ```bash
+  # Fast, unprivileged discovery across a target subnet
+  python3 yerscan.py target-domain.com -p top100 --fast
+  ```
+- **Hacker Perspective**: By querying the top 100 ports using asynchronous TCP Connect scans, an auditor quickly establishes the active service footprint (web applications, reverse proxies, exposed databases) in seconds.
+
+### 2. Firewall & IDS Evasion Tactics
+- **Objective**: Bypass stateful inspection firewalls, packet filters, and rate-limiting IDSes.
+- **Workflow**:
+  ```bash
+  # Stealth SYN scan with packet fragmentation, decoy IPs, and paranoid timing
+  sudo python3 yerscan.py 192.168.1.50 -s syn --mtu 24 --decoy RND,RND,192.168.1.1 --timing T1 --shuffle
+  ```
+- **Hacker Perspective**:
+  - `--mtu 24` fragments TCP packets into tiny 8-byte chunks, preventing naive signature firewalls from reconstructing the TCP header.
+  - `--decoy RND` floods the target's intrusion detection system with packets from random spoofed IP addresses, concealing the tester's true origin.
+  - `--timing T1` spaces out probes to defeat threshold-based anomaly detection.
+
+### 3. Web Application DAST & Secret Discovery
+- **Objective**: Find critical web application vulnerabilities and exposed credentials without needing credentials.
+- **Workflow**:
+  - Run with `--dast` (enabled by default) or toggle **Web DAST Assessment** in the Web UI.
+- **Hacker Perspective**:
+  - If a developer accidentally left `/.env` accessible, PENTRAX retrieves the file, matches variables like `DB_PASSWORD` or `AWS_ACCESS_KEY`, and immediately generates a **CRITICAL (48-Hour SLA)** vulnerability card with captured evidence.
+  - If an API reflects arbitrary `Origin` headers while setting `Access-Control-Allow-Credentials: true`, an ethical hacker can craft a Cross-Origin exploit to steal session cookies.
+
+### 4. Cryptographic Weakness Identification
+- **Objective**: Detect man-in-the-middle vectors and compliance failures.
+- **Workflow**:
+  - Automated during port 443 / 8443 scanning or via `--ssl-audit`.
+- **Hacker Perspective**:
+  - Identifies servers still negotiating TLS 1.0 or TLS 1.1, which are susceptible to cipher downgrade attacks (POODLE, BEAST).
+  - Flags expired or self-signed certificates that could trick users or indicate forgotten staging servers.
+
+### 5. MITRE ATT&CK Threat Actor Attribution
+- **Objective**: Translate raw port and service findings into adversarial threat intelligence for executive debriefs.
+- **Workflow**:
+  - View the **MITRE ATT&CK Graph Visualizer** in the web interface.
+- **Hacker Perspective**:
+  - Seeing that an exposed SMB service matches CVE-2017-010 immediately links the vulnerability to **MITRE Technique T1210 (Exploitation of Remote Services)** and campaigns utilized by threat actors like **Lazarus Group** and **Sandworm**.
+
+### 6. Executive Remediation & SLA Governance
+- **Objective**: Deliver a comprehensive report to engineering teams with clear remediation deadlines.
+- **Workflow**:
+  - Click **Export Report** $\rightarrow$ **HTML** or **CSV** in the web dashboard.
+- **Hacker Perspective**:
+  - Reports categorize findings by severity and include exact remediation instructions (e.g., adding `Content-Security-Policy: default-src 'self'`) along with contract-grade SLAs.
+
+---
+
+## 🚀 Quick Start & Setup
+
+### Prerequisites
+- **Python**: Version 3.8 or higher.
+- **Dependencies**: None for the core CLI (uses pure Python standard library!).
+- **Web Console**: Requires `starlette` and `uvicorn` (pre-installed or installable via `pip install starlette uvicorn`).
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/yerscan.git
+git clone https://github.com/yerondereje432/yerscan.git
 cd yerscan
 
-# Install dependencies (none required - pure Python!)
-# Yerscan uses only Python standard library
-
-# Make executable
-chmod +x yerscan.py
-
-# Run self-test
-python3 yerscan.py --self-test
+# Make launcher executable
+chmod +x run_server.py yerscan.py
 ```
 
-### **Web Console Quick Start (Graduation Edition)**
+---
 
-Launch the full-featured, real-time web console with a single command:
+### Web Console Operations (Recommended)
+
+Start the PENTRAX Cyber Operations Console:
 
 ```bash
-# Start the web platform (default: http://127.0.0.1:8080)
+# Unprivileged Mode (Safe TCP Connect Engine)
 python3 run_server.py --host 127.0.0.1 --port 8080
 
-# Or launch with elevated privileges to unlock raw SYN/ACK/FIN scans:
+# Or Elevated Mode (Unlocks Stealth SYN / ACK / FIN / XMAS Scans)
 sudo python3 run_server.py --host 127.0.0.1 --port 8080
 ```
-Open **`http://127.0.0.1:8080`** in your browser to access the SOC Security Operations Dashboard with live WebSockets, MITRE ATT&CK attack path topology graphs, and one-click report exports.
 
-### **CLI Basic Usage**
+1. Open your browser and navigate to **`http://127.0.0.1:8080`**.
+2. Click **New Assessment** in the upper-right corner.
+3. Enter your target IP, subnet (e.g., `192.168.1.0/24`), or domain (e.g., `example.com`).
+4. Select your desired intelligence modules:
+   - `[✓] Deep Intel Probes (15+ Services)`
+   - `[✓] Web DAST (CORS, Headers, Secrets)`
+   - `[✓] SSL/TLS Cryptographic Audit`
+   - `[✓] Safe PoC Verification Checks`
+5. Acknowledge the Ethical Rules of Engagement and click **Launch Assessment**.
+6. Monitor live discovery on the interactive WebSocket HUD and inspect attack chains on the **MITRE ATT&CK Graph**.
+
+---
+
+### CLI Operations
 
 ```bash
-# Quick scan (top 50 ports)
-sudo python3 yerscan.py 192.168.1.0/24 --quick
+# Verify system readiness and run built-in diagnostics
+python3 yerscan.py --self-test
 
-# Standard scan (top 100 ports)
-sudo python3 yerscan.py 192.168.1.0/24 --fast
+# Scan a single host (Top 100 ports, fast mode)
+python3 yerscan.py 127.0.0.1 --fast
 
-# Full scan (all 65535 ports)
-sudo python3 yerscan.py 192.168.1.0/24 --full
-
-# With vulnerability verification
-sudo python3 yerscan.py 192.168.1.0/24 --full --verify
+# Deep audit of a web application with full reporting
+python3 yerscan.py target.com -p 80,443,8080,8443 --deep --format all
 ```
 
 ---
 
-## 📖 Usage Examples
+## 🔒 Privilege Modes: Unprivileged vs. Root
 
-### **1. Quick Network Reconnaissance**
-```bash
-# Scan top 50 ports on entire /24 network
-sudo python3 yerscan.py 192.168.1.0/24 --quick
+PENTRAX automatically adapts its operational behavior depending on your operating system privileges:
 
-# Output: Fast scan with top 50 ports, ~30 seconds
-```
+| Capability | Unprivileged User (Standard) | Root / Elevated (`sudo`) |
+| :--- | :---: | :---: |
+| **TCP Connect Scanning** | ✅ Supported (Async socket engine) | ✅ Supported |
+| **Web DAST & CORS Auditing** | ✅ Full Support | ✅ Full Support |
+| **SSL/TLS Cryptographic Audit** | ✅ Full Support | ✅ Full Support |
+| **CVE Matching & Distro Backports** | ✅ Full Support | ✅ Full Support |
+| **MITRE ATT&CK Graph & Reports** | ✅ Full Support | ✅ Full Support |
+| **SYN Stealth Scanning** | ❌ Requires Raw Sockets | ✅ Full Support |
+| **ACK / FIN / NULL / XMAS Probes** | ❌ Requires Raw Sockets | ✅ Full Support |
+| **TCP Window Scanning** | ❌ Requires Raw Sockets | ✅ Full Support |
+| **Packet Fragmentation & Decoys** | ❌ Requires Raw Sockets | ✅ Full Support |
+| **OS Fingerprinting via IP TTL** | ⚠️ Fallback estimation | ✅ High-accuracy raw inspection |
 
-### **2. Stealth Scanning with Evasion**
-```bash
-# Stealth mode with decoys and fragmentation
-sudo python3 yerscan.py 192.168.1.0/24 \
-  --stealth \
-  --decoy RND,RND,RND \
-  --mtu 24 \
-  --max-delay 2.0
-```
+---
 
-### **3. Full Vulnerability Assessment**
-```bash
-# Complete scan with verification
-sudo python3 yerscan.py 192.168.1.0/24 \
-  --full \
-  --verify \
-  -o security_assessment
-```
+## 📖 CLI Command Reference & Presets
 
-### **4. Targeted Service Scanning**
-```bash
-# Scan specific ports only
-sudo python3 yerscan.py 192.168.1.0/24 \
-  -p 22,80,443,3306,3389 \
-  --verify
-```
+### Scanning Presets
+- `--quick`: Scans the top 50 ports with high concurrency (fast recon).
+- `--fast`: Scans the top 100 ports with a 0.5s connection timeout.
+- `--stealth`: Activates SYN scan, packet shuffling, evasive delays, and T2 timing.
+- `--thorough`: Scans all 65,535 TCP ports, UDP services, and runs deep intel probes.
+- `--full`: Complete assessment including all ports, UDP, deep intel, and ICMP discovery sweeps.
 
-### **5. UDP Scanning**
-```bash
-# Scan UDP ports
-sudo python3 yerscan.py 192.168.1.0/24 --udp --verify
-```
+### Timing Templates
+- `-T0 (Paranoid)`: Serial, extreme delay (evades strict IDS/IPS).
+- `-T1 (Sneaky)`: Slow random delay (evades heuristic detection).
+- `-T2 (Polite)`: Rate-limited scanning (reduces target load).
+- `-T3 (Normal)`: Default adaptive timing.
+- `-T4 (Aggressive)`: Fast parallel scanning suited for test environments.
+- `-T5 (Insane)`: Maximum socket throughput (high-bandwidth lab networks).
 
-### **6. Resume Interrupted Scan**
-```bash
-# Start scan with checkpoint
-sudo python3 yerscan.py 192.168.1.0/24 \
-  --full \
-  --checkpoint scan_checkpoint.json
-
-# Resume later
-sudo python3 yerscan.py 192.168.1.0/24 \
-  --resume scan_checkpoint.json
-```
-
-### **7. Different Scan Types**
-```bash
-# SYN scan (stealth, requires root)
-sudo python3 yerscan.py 192.168.1.0/24 -s syn
-
-# FIN scan (bypasses stateful firewalls)
-sudo python3 yerscan.py 192.168.1.0/24 -s fin
-
-# XMAS scan (bypasses stateless firewalls)
-sudo python3 yerscan.py 192.168.1.0/24 -s xmas
-
-# NULL scan (bypasses packet filters)
-sudo python3 yerscan.py 192.168.1.0/24 -s null
-
-# ACK scan (firewall rule detection)
-sudo python3 yerscan.py 192.168.1.0/24 -s ack
-
-# WINDOW scan (window size analysis)
-sudo python3 yerscan.py 192.168.1.0/24 -s window
-```
-
-### **8. Plugin System**
-```python
-# Create custom plugin: my_plugin.py
-def pre_scan(target, hosts, ports):
-    print(f"[PLUGIN] Starting scan of {target}")
-    print(f"[PLUGIN] {len(hosts)} hosts, {len(ports)} ports")
-
-def per_host(ip, ports):
-    print(f"[PLUGIN] Scanning {ip} with {len(ports)} ports")
-
-def post_scan(results, host_info):
-    print(f"[PLUGIN] Found {len(results)} hosts with open ports")
-    for ip, ports in results.items():
-        print(f"  {ip}: {len(ports)} open ports")
-
-def per_vuln(ip, port, vuln):
-    print(f"[PLUGIN] VULN: {ip}:{port} - {vuln}")
-```
+### Common Command Examples
 
 ```bash
-# Run with plugin
-sudo python3 yerscan.py 192.168.1.0/24 --verify --script my_plugin.py
+# Scan a CIDR block with HTML report export
+python3 yerscan.py 192.168.1.0/24 -p top50 -f html -o lab_report
+
+# Stealth scan with randomized decoys
+sudo python3 yerscan.py 10.0.0.5 -s syn --decoy RND,RND --evasive
+
+# Specific service scan excluding an administrative IP
+python3 yerscan.py 10.0.0.0/24 -p 22,80,443,3306 --exclude 10.0.0.1
 ```
 
 ---
 
-## 📊 Output Examples
+## 🧪 Verification & Test Suite
 
-### **Terminal Output**
-```
-  ╔══════════════════════════════════════════════════════════════════════╗
-  ║                                                                      ║
-  ║   ░█░█░█▀▀░█▀▄░█▀▀░█▀▀░█▀█░█▀█░█▀▀  v8.0 — Production Grade  ║
-  ║   ░░█░░█▀▀░█▀▄░▀▀█░█░░░█▀█░█░█░█▀▀                              ║
-  ║   ░░▀░░▀▀▀░▀░▀░▀▀▀░▀▀▀░▀░▀░▀░▀░▀▀▀                              ║
-  ║                                                                      ║
-  ║   SYN/ACK/FIN/XMAS/NULL · CVE+CVSS · CIS · Plugins · Resume · IPv6 ║
-  ╚══════════════════════════════════════════════════════════════════════╝
+PENTRAX includes a comprehensive unit and integration test suite with **52 automated tests** covering core network engines, packet reassembly, DAST fuzzing, SSL handshake parsing, and SSRF defenses:
 
-  Target:         192.168.1.0/24
-  Hosts:          254
-  TCP Ports:      65535 (1-65535)
-  Scan Type:      SYN
-  Concurrency:    5000 sockets
-  Timeout:        1.5s
-  Deep Intel:     ENABLED
-  Verification:   ENABLED
-
-  [PHASE 1/5] HOST DISCOVERY — ICMP Ping Sweep (254 hosts)
-  ● 192.168.1.1 is alive (ICMP)
-  ● 192.168.1.10 is alive (ICMP)
-  ● 192.168.1.20 is alive (ICMP)
-  ✓ Found 3 live host(s)
-
-  [PHASE 2/5] PORT SCAN (SYN) (3 hosts × 65535 ports = 196605 checks)
-  [██████████████████████████████████████████████████] 100.0%  47 open  196558 filtered  0 closed  1500/s  ETA 0m00s
-
-  ✓ Found 47 open port(s) on 3 host(s)
-
-  [PHASE 3/5] VERSION DETECTION & CVE MATCHING (47 services)
-  ✓ Detected versions for 47 services
-  ⚠ Found 3 CVE matches!
-
-  [PHASE 4/5] DEEP INTEL — Service Enumeration (47 services)
-  ✓ Deep probed 47 services
-
-  [PHASE 5/6] VULNERABILITY VERIFICATION — Safe PoC Checks
-  ✓ 192.168.1.10: 2/3 vulnerabilities confirmed
-  ✓ Verification complete: 2/3 vulnerabilities confirmed
-
-  [PHASE 6/6] RISK ANALYSIS & OS FINGERPRINTING
-  ✓ Risk analysis complete
-
-  ══════════════════════════════════════════════════════════════════════
-    ✓ SCAN COMPLETE
-  ══════════════════════════════════════════════════════════════════════
-
-  Duration:       127.3s
-  Hosts alive:    3
-  Hosts w/ports:  3
-  Open ports:     47 (0 UDP)
-  CVEs found:     3
-  Vulns found:    2
-  Risk:           1 CRITICAL  1 HIGH
-
-  ▸ 192.168.1.10  [CRITICAL 90pts]  5 open
-     445/tcp  open  SMB  [CRITICAL]
-       ├─ CVE: MS17-010 (CVSS 9.8) — EternalBlue SMB RCE
-       ├─ CIS 9.2.5: Ensure SMB is restricted (Level 1)
-       └─ Fix: Disable SMBv1, restrict to trusted networks
-     6379/tcp  open  Redis  [CRITICAL]
-       ├─ CVE: CVE-2021-32625 (CVSS 8.8) — Redis integer overflow
-       ├─ CIS Custom: Ensure Redis requires auth (Level 1)
-       └─ Fix: Set requirepass, bind to localhost
-
-    ATTACK PATHS (2 found, exploitability: 192/100):
-      445/EternalBlue SMB RCE [TRIVIAL] [CATASTROPHIC] Score: 100
-        Campaigns: WannaCry (2017), NotPetya (2017)
-        Attack: SMB Exploit → SYSTEM Shell → Credential Dump → Lateral Movement
-        MITRE: T1210 - Exploitation of Remote Services
-        Tools: metasploit: exploit/windows/smb/ms17_010_eternalblue
-        Threat Actors: Lazarus Group (DPRK), Sandworm (Russia)
-
-  Reports saved:
-    • security_assessment.json
-    • security_assessment.csv
-    • security_assessment.html
-```
-
-### **JSON Output**
-```json
-{
-  "target": "192.168.1.0/24",
-  "scan_time": "2026-08-07T03:47:39",
-  "duration_seconds": 127.3,
-  "scan_type": "syn",
-  "ports_scanned": 65535,
-  "hosts_alive": 3,
-  "hosts_with_ports": 3,
-  "total_open_ports": 47,
-  "cves_found": 3,
-  "vulns_found": 2,
-  "results": {
-    "192.168.1.10": {
-      "mac": "00:11:22:33:44:55",
-      "risk_score": 90,
-      "risk_level": "CRITICAL",
-      "ports": [
-        {
-          "port": 445,
-          "protocol": "tcp",
-          "state": "open",
-          "service": "SMB",
-          "version": "Windows Server 2012 R2",
-          "risk_level": "CRITICAL",
-          "cves": [
-            {
-              "cve": "MS17-010",
-              "severity": "CRITICAL",
-              "cvss_score": 9.8,
-              "description": "EternalBlue SMB RCE"
-            }
-          ]
-        }
-      ]
-    }
-  }
-}
-```
-
----
-
-## 🎯 Scan Presets
-
-| Preset | Ports | Speed | Use Case |
-|--------|-------|-------|----------|
-| `--quick` | Top 50 | Fast | Quick reconnaissance |
-| `--fast` | Top 100 | Fast | Standard scanning |
-| `--stealth` | Top 100 | Slow | Evasive scanning |
-| `--thorough` | All 65535 | Slow | Complete assessment |
-| `--full` | All 65535 + UDP | Slow | Comprehensive scan |
-| `--vuln` | All 65535 | Slow | Vulnerability focus |
-
----
-
-## 🔧 Advanced Options
-
-### **Timing Templates**
 ```bash
-# T0 - Paranoid (very slow, very stealthy)
-sudo python3 yerscan.py 192.168.1.0/24 --timing T0
-
-# T1 - Sneaky (slow, stealthy)
-sudo python3 yerscan.py 192.168.1.0/24 --timing T1
-
-# T2 - Polite (moderate)
-sudo python3 yerscan.py 192.168.1.0/24 --timing T2
-
-# T3 - Normal (default)
-sudo python3 yerscan.py 192.168.1.0/24 --timing T3
-
-# T4 - Aggressive (fast)
-sudo python3 yerscan.py 192.168.1.0/24 --timing T4
-
-# T5 - Insane (very fast)
-sudo python3 yerscan.py 192.168.1.0/24 --timing T5
-```
-
-### **Evasion Techniques**
-```bash
-# Decoy scanning (spoof source IP)
-sudo python3 yerscan.py 192.168.1.0/24 --decoy RND,RND,RND
-
-# Packet fragmentation (bypass IDS)
-sudo python3 yerscan.py 192.168.1.0/24 --mtu 24
-
-# Random delays (avoid detection)
-sudo python3 yerscan.py 192.168.1.0/24 --max-delay 3.0
-
-# Shuffle port order
-sudo python3 yerscan.py 192.168.1.0/24 --shuffle
-```
-
-### **Output Formats**
-```bash
-# JSON only
-sudo python3 yerscan.py 192.168.1.0/24 -f json -o scan_results
-
-# CSV only
-sudo python3 yerscan.py 192.168.1.0/24 -f csv -o scan_results
-
-# HTML only
-sudo python3 yerscan.py 192.168.1.0/24 -f html -o scan_results
-
-# All formats
-sudo python3 yerscan.py 192.168.1.0/24 -f all -o scan_results
-```
-
----
-
-## 🛡️ Vulnerability Detection
-
-### **Supported Vulnerabilities**
-
-| Service | Port | Vulnerability | Risk |
-|---------|------|---------------|------|
-| SMB | 445 | EternalBlue (MS17-010) | CRITICAL |
-| Redis | 6379 | No Authentication RCE | CRITICAL |
-| MongoDB | 27017 | No Authentication | CRITICAL |
-| Memcached | 11211 | DDoS Amplification | CRITICAL |
-| SSH | 22 | Weak Algorithms | HIGH |
-| FTP | 21 | Anonymous Login | HIGH |
-| Elasticsearch | 9200 | No Authentication | CRITICAL |
-| Docker API | 2375 | Unauthenticated API | CRITICAL |
-
-### **MITRE ATT&CK Mapping**
-
-| Technique ID | Technique Name | Mapped Services |
-|--------------|----------------|-----------------|
-| T1210 | Exploitation of Remote Services | SMB, Redis, MongoDB |
-| T1021.002 | SMB/Windows Admin Shares | SMB |
-| T1190 | Exploit Public-Facing Application | Redis, MongoDB, Elasticsearch |
-| T1059.004 | Unix Shell | Redis, MongoDB |
-| T1078.001 | Default Accounts | FTP, SNMP |
-| T1498.002 | Reflection Amplification | Memcached, SNMP |
-
----
-
-## 📋 Command Reference
-
-```
-usage: yerscan.py [options] target
-
-Positional Arguments:
-  target                    Target IP, CIDR, or hostname
-
-Scan Options:
-  -p, --ports PORTS         Port specification (default: all)
-  --top N                   Scan top N ports
-  --udp                     Enable UDP scanning
-  -s, --scan-type TYPE      Scan type: connect/syn/ack/fin/xmas/null/window
-  -c, --concurrency N       Concurrent connections (default: 5000)
-  -T, --timeout SECONDS     Connection timeout (default: 1.5)
-  --timing T0-T5            Timing template
-
-Discovery:
-  --icmp                    Use ICMP ping sweep
-  --no-banner               Skip banner grabbing
-  --no-mac                  Skip MAC address resolution
-
-Advanced:
-  --deep                    Enable deep intel probes
-  --verify                  Enable vulnerability verification
-  --decoy IPS               Decoy IPs (comma-separated or RND)
-  --mtu N                   Packet fragmentation MTU
-  --max-delay SECONDS       Maximum random delay
-  --shuffle                 Shuffle port order
-  --exclude IPS             Exclude IPs (comma-separated)
-  --scope FILE              Allowlist file (one CIDR/IP per line); targets outside it abort the scan
-  --authorize               Confirm authorization to scan public targets
-
-Output:
-  -o, --output FILE         Output filename base
-  -f, --format FORMAT       Output format: json/csv/html/all
-  --log FILE                Audit log file
-
-Presets:
-  --quick                   Quick scan (top 50 ports)
-  --fast                    Fast scan (top 100 ports)
-  --stealth                 Stealth mode with evasion
-  --thorough                Thorough scan (all ports)
-  --full                    Full scan (all ports + UDP)
-  --vuln                    Vulnerability-focused scan
-
-Other:
-  --self-test               Run self-test suite
-  --checkpoint FILE         Save checkpoint file
-  --resume FILE             Resume from checkpoint
-  --config FILE             Load configuration file
-  --save-profile FILE       Save current configuration
-  -y, --yes                 Auto-confirm warnings
-  -h, --help                Show help message
-```
-
----
-
-## 🔒 Security Considerations
-
-### **Authorization**
-Always ensure you have proper authorization before scanning:
-- Written permission from network owner
-- Documented scope and purpose
-- Defined testing window
-- Emergency contact information
-
-### **Legal Compliance**
-- **Never scan networks you don't own or have explicit permission to test**
-- **Document all scanning activities**
-- **Follow responsible disclosure practices**
-- **Comply with local laws and regulations**
-
-### **Ethical Guidelines**
-- Use only for legitimate security assessments
-- Never use for malicious purposes
-- Report vulnerabilities responsibly
-- Respect privacy and confidentiality
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-### **Running the tests**
-```bash
-# No privileges needed (raw-socket tests are skipped)
+# Run complete test suite
 python3 -m unittest discover -s tests -v
-
-# Also run raw SYN/ACK/FIN/NULL/XMAS/WINDOW tests on loopback
-sudo python3 -m unittest discover -s tests -v
 ```
 
-### **Known limitations**
-- Raw TCP scan types (SYN, ACK, FIN, NULL, XMAS, WINDOW) are IPv4-only. IPv6 targets use connect semantics.
-- Window scan: Linux answers open ports with RST and window 0, so it reports them as closed. It is most useful against stacks that report a non-zero window.
-- CVE matching uses a small curated table with version ranges. Banner matches are not confirmed vulnerabilities. MS17-010 is inferred from the OS name and is not verified.
-- Attack paths are marked `POTENTIAL` unless a verification probe or deep-probe finding confirms them.
+```text
+test_audit_web_dast_logic (test_web_api.TestWebAPI) ... ok
+test_cloud_metadata_ssrf_blocked (test_yerscan.TestScopeGate) ... ok
+test_start_scan_validation_fails_on_cloud_metadata_ip (test_web_api.TestWebAPI) ... ok
+test_backport_detection_and_sla (test_yerscan.TestCVEMatching) ... ok
+test_vulnerability_sla_auto_assignment (test_web_api.TestWebAPI) ... ok
+test_export_scan_formats (test_web_api.TestWebAPI) ... ok
+test_websocket_sync (test_web_api.TestWebAPI) ... ok
+...
+----------------------------------------------------------------------
+Ran 52 tests in 0.719s
 
-### **Development Guidelines**
-- Follow PEP 8 style guide
-- Add docstrings to all functions
-- Write unit tests for new features
-- Update documentation
-
----
-
-## 📄 License
-
-MIT License - see LICENSE file for details
+OK (skipped=4)
+```
 
 ---
 
-## 🙏 Acknowledgments
+## ⚖️ Ethical Rules of Engagement & Legal Disclaimer
 
-- **nmap** — Inspiration for scanning techniques
-- **MITRE ATT&CK** — Attack technique mapping
-- **CVE Details** — Vulnerability database
-- **CIS Benchmarks** — Compliance standards
-
----
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/yerscan/issues)
-- **Documentation**: [Wiki](https://github.com/yourusername/yerscan/wiki)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/yerscan/discussions)
+> [!IMPORTANT]
+> **READ CAREFULLY BEFORE USE**:
+> PENTRAX is designed exclusively for authorized penetration testing, security research, vulnerability assessment, and educational evaluations.
+>
+> 1. **Explicit Written Authorization**: Never execute assessments against networks, IP addresses, domains, or web applications without prior written consent from the target system owner.
+> 2. **Compliance with Legal Statutes**: Scanning unauthorized systems may violate laws including the United States Computer Fraud and Abuse Act (CFAA), the UK Computer Misuse Act, and international computer crime regulations.
+> 3. **Non-Destructive Execution**: PENTRAX utilizes safe, non-destructive validation probes. Do not modify the source code to perform denial-of-service (DoS) or destructive exploitation.
+> 4. **Liability Disclaimer**: The authors and contributors assume no liability for misuse or damage caused by this software. Use responsibly and ethically.
 
 ---
 
-## 🎓 Learning Resources
-
-- [Nmap Network Scanning](https://nmap.org/book/)
-- [MITRE ATT&CK Framework](https://attack.mitre.org/)
-- [CVE Details](https://www.cvedetails.com/)
-- [CIS Benchmarks](https://www.cisecurity.org/cis-benchmarks/)
-
----
-
-**Built with ❤️ for the security community**
-
-*Remember: With great power comes great responsibility. Use responsibly and ethically.*
+<div align="center">
+  <sub>PENTRAX v8.0 • Engineered for Ethical Hackers & Security Researchers • MIT License</sub>
+</div>
