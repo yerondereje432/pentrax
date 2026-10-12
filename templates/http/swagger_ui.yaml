@@ -1,0 +1,24 @@
+id: PENTRAX-HTTP-004
+name: Publicly Exposed API Documentation / Swagger UI
+severity: MEDIUM
+cvss: 5.3
+http:
+  - method: GET
+    paths:
+      - /swagger-ui.html
+      - /swagger/index.html
+      - /api/docs
+      - /openapi.json
+      - /v2/api-docs
+    matchers:
+      - type: status
+        values: [200]
+      - type: word
+        words:
+          - "swagger"
+          - "openapi"
+          - "api documentation"
+        condition: or
+remediation: Disable public exposure of interactive API specifications and Swagger consoles in production environments.
+sla: 30 Days
+

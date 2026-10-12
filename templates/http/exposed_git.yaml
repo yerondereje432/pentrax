@@ -1,0 +1,18 @@
+id: PENTRAX-HTTP-001
+name: Exposed .git Version Control Repository
+severity: HIGH
+category: DAST
+http:
+  method: GET
+  paths:
+    - /.git/config
+    - /.git/HEAD
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words: ["[core]", "ref: refs/heads/"]
+      condition: or
+remediation: Configure web server reverse proxy to block all dotfile requests (e.g. deny all for /\.git/).
+sla: 14 Days
+

@@ -1,0 +1,16 @@
+id: PENTRAX-NET-001
+name: Unencrypted Telnet Service Exposed
+severity: HIGH
+cvss: 7.5
+network:
+  - port: 23
+    protocol: tcp
+    matchers:
+      - type: word
+        words:
+          - "Telnet"
+          - "login:"
+          - "Password:"
+remediation: Disable Telnet and migrate to encrypted SSHv2 (port 22) for all remote administration.
+sla: 14 Days
+

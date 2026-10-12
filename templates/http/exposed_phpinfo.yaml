@@ -1,0 +1,23 @@
+id: PENTRAX-HTTP-005
+name: Exposed phpinfo() Diagnostic Page
+severity: MEDIUM
+cvss: 5.3
+http:
+  - method: GET
+    paths:
+      - /phpinfo.php
+      - /info.php
+      - /test.php
+      - /php_info.php
+    matchers:
+      - type: status
+        values: [200]
+      - type: word
+        words:
+          - "PHP Version"
+          - "Configuration File (php.ini) Path"
+          - "Zend Engine"
+        condition: and
+remediation: Remove diagnostic and debugging PHP files immediately to prevent environment variable and architecture leakage.
+sla: 14 Days
+

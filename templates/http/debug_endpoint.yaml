@@ -1,0 +1,25 @@
+id: PENTRAX-HTTP-006
+name: Exposed Spring Boot Actuator / Debug Endpoints
+severity: HIGH
+cvss: 7.5
+http:
+  - method: GET
+    paths:
+      - /actuator/env
+      - /actuator/health
+      - /actuator/mappings
+      - /debug/vars
+      - /_profiler/
+    matchers:
+      - type: status
+        values: [200]
+      - type: word
+        words:
+          - "activeProfiles"
+          - "propertySources"
+          - "memstats"
+          - "server.port"
+        condition: or
+remediation: Secure or disable Spring Boot Actuator management endpoints by setting management.endpoints.web.exposure.exclude=*.
+sla: 14 Days
+

@@ -23,6 +23,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import pentrax as ys
+from scanner.notifier import notifier
 from web.db import db_manager
 
 logger = logging.getLogger("pentrax.web.manager")
@@ -367,6 +368,11 @@ class ScanManager:
             elif ev_type == "vulnerability_found":
                 instance.add_log(f"Vulnerability found [{ev.get('severity')}]: {ev.get('title')} on {ev.get('ip')}:{ev.get('port')} (SLA: {ev.get('remediation_sla')})")
                 instance.broadcast(ev)
+                if ev.get("severity") in ("CRITICAL", "HIGH"):
+                    try:
+                        notifier.notify_critical(ev, instance.id, host=str(ev.get("ip", "Unknown")))
+                    except Exception:
+                        pass
 
             elif ev_type == "scan_completed":
                 instance.result = ev.get("export_data")
@@ -389,6 +395,17 @@ class ScanManager:
                 "status": "completed",
                 "duration_seconds": instance.duration_seconds,
             })
+            # Dispatch scan completed notification
+            try:
+                notifier.notify_scan_complete({
+                    "id": instance.id,
+                    "target": instance.config.get("target"),
+                    "critical_count": sum(1 for p in instance.open_ports for v in p.get("vulns", []) if isinstance(v, dict) and v.get("severity") == "CRITICAL"),
+                    "high_count": sum(1 for p in instance.open_ports for v in p.get("vulns", []) if isinstance(v, dict) and v.get("severity") == "HIGH"),
+                    "open_ports_count": len(instance.open_ports),
+                })
+            except Exception:
+                pass
         except asyncio.CancelledError:
             instance.status = "stopped"
             instance.duration_seconds = round(time.time() - start_time, 2)
