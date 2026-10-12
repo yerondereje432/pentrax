@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PENTRAX — Web Vulnerability Assessment & Security Scanner</title>
+  <!-- Tailwind CSS & FontAwesome & Vis.js via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            pentrax: {
+              950: '#07090e',
+              900: '#0c0f16',
+              850: '#121620',
+              800: '#181e2b',
+              750: '#202738',
+              700: '#2a3349',
+              red: '#ff3344',
+              coral: '#ff4d5a',
+              crimson: '#dc2626',
+              darkred: '#3d0c12',
+              silver: '#e2e8f0'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #07090e; }
+    code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #07090e; }
+    ::-webkit-scrollbar-thumb { background: #202738; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #ff3344; }
+    .glow-red { box-shadow: 0 0 20px rgba(255, 51, 68, 0.35); }
+    .glow-red-sm { box-shadow: 0 0 10px rgba(255, 51, 68, 0.25); }
+    .border-glow-red { border-color: rgba(255, 51, 68, 0.5); box-shadow: 0 0 15px rgba(255, 51, 68, 0.2); }
+  </style>
+</head>
+<body class="bg-pentrax-950 text-slate-100 min-h-screen flex flex-col selection:bg-pentrax-red selection:text-white">
+
+  <!-- TOP NAVIGATION HEADER -->
+  <header class="border-b border-pentrax-700/80 bg-pentrax-900/95 backdrop-blur sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-4">
+      <!-- PENTRAX Official Logo Badge -->
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="location.reload()">
+        <svg class="w-10 h-10 drop-shadow-[0_0_10px_rgba(255,51,68,0.5)]" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Outer Red Pentagon -->
+          <polygon points="60,12 105,45 88,98 32,98 15,45" stroke="#ff3344" stroke-width="3.5" fill="none" stroke-linejoin="round"/>
+          <!-- Outer Nodes/Vertices -->
+          <circle cx="60" cy="12" r="3.5" fill="#ff3344"/>
+          <circle cx="105" cy="45" r="3.5" fill="#ff3344"/>
+          <circle cx="88" cy="98" r="3.5" fill="#ff3344"/>
+          <circle cx="32" cy="98" r="3.5" fill="#ff3344"/>
+          <circle cx="15" cy="45" r="3.5" fill="#ff3344"/>
+          <!-- Inner White Pentagon -->
+          <polygon points="60,26 92,49 80,87 40,87 28,49" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linejoin="round"/>
+          <!-- Center Red Checkmark -->
+          <path d="M43,58 L54,71 L77,44" stroke="#ff3344" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-2xl font-black tracking-wider text-white">PENTRAX</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-pentrax-darkred text-pentrax-red font-mono font-bold border border-pentrax-red/40">v8.0</span>
+          </div>
+          <p class="text-[10px] text-pentrax-red font-bold tracking-widest uppercase">WEB VULNERABILITY ASSESSMENT</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Privileges Badge, User Auth & Action Button -->
+    <div class="flex items-center space-x-3 sm:space-x-4">
+      <div id="sys-cap-badge" class="hidden sm:flex items-center space-x-2 text-xs px-3.5 py-1.5 rounded-full bg-pentrax-850 border border-pentrax-700">
+        <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+        <span class="text-slate-400 font-mono">Checking privileges...</span>
+      </div>
+
+      <!-- User RBAC Profile / Sign In -->
+      <div id="auth-status-container" class="flex items-center space-x-2">
+        <button id="btn-login-trigger" onclick="openLoginModal()" class="px-3 py-1.5 bg-pentrax-800 hover:bg-pentrax-700 text-slate-200 rounded-lg text-xs font-semibold border border-pentrax-700 flex items-center space-x-1.5 transition">
+          <i class="fa-solid fa-user-lock text-pentrax-red"></i>
+          <span>Sign In</span>
+        </button>
+        <div id="user-profile-badge" class="hidden flex items-center space-x-2 px-3 py-1.5 bg-pentrax-850 rounded-lg border border-pentrax-700 text-xs">
+          <i class="fa-solid fa-circle-user text-pentrax-red"></i>
+          <span id="user-display-name" class="font-mono text-slate-200 font-bold"></span>
+          <span id="user-role-badge" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-pentrax-950 text-slate-400 border border-slate-700"></span>
+          <button onclick="handleLogout()" class="text-slate-400 hover:text-red-400 ml-1.5 transition" title="Sign out"><i class="fa-solid fa-right-from-bracket"></i></button>
+        </div>
+      </div>
+
+      <button onclick="openNewScanModal()" class="px-4 py-2 bg-gradient-to-r from-red-600 via-pentrax-red to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-lg font-bold text-xs shadow-lg glow-red flex items-center space-x-2 transition-all transform hover:-translate-y-0.5">
+        <i class="fa-solid fa-crosshairs text-sm"></i>
+        <span>NEW ASSESSMENT</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+
+    <!-- ACTIVE SCAN HUD / REAL-TIME STATUS -->
+    <section id="scan-hud" class="bg-pentrax-900 border border-pentrax-700 rounded-xl p-5 shadow-2xl relative overflow-hidden hidden">
+      <!-- Top Glowing Red Accent Line -->
+      <div id="hud-accent-bar" class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-600 via-pentrax-red to-rose-500"></div>
+
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+        <div>
+          <div class="flex items-center space-x-3">
+            <span id="hud-status-badge" class="px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-pentrax-darkred text-pentrax-red border border-pentrax-red/50 flex items-center space-x-1.5">
+              <span class="w-2 h-2 rounded-full bg-pentrax-red animate-ping"></span>
+              <span>RUNNING</span>
+            </span>
+            <h2 class="text-lg font-bold text-white flex items-center space-x-2">
+              <span class="text-slate-400">Target:</span>
+              <span id="hud-target" class="text-pentrax-red font-mono font-bold">127.0.0.1</span>
+            </h2>
+            <span id="hud-scan-type" class="text-xs px-2 py-0.5 rounded bg-pentrax-800 text-slate-300 font-mono uppercase border border-pentrax-700">CONNECT</span>
+          </div>
+          <p id="hud-phase-desc" class="text-xs text-slate-400 mt-1 font-medium">Phase 1: Host Discovery — Resolving host and verifying network status...</p>
+        </div>
+
+        <div class="flex items-center space-x-3">
+          <button id="btn-stop-scan" onclick="stopCurrentScan()" class="px-3.5 py-1.5 bg-red-950 hover:bg-red-900 border border-red-600 text-red-300 text-xs rounded-lg font-bold flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-hand"></i>
+            <span>Stop Scan</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 6-Phase Stepper -->
+      <div class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4 text-xs font-mono">
+        <div id="step-1" class="p-2 rounded bg-pentrax-850 border border-pentrax-700 text-center text-slate-400">1. Discovery</div>
+        <div id="step-2" class="p-2 rounded bg-pentrax-850 border border-pentrax-700 text-center text-slate-400">2. Port Scan</div>
+        <div id="step-3" class="p-2 rounded bg-pentrax-850 border border-pentrax-700 text-center text-slate-400">3. Versions</div>
+        <div id="step-4" class="p-2 rounded bg-pentrax-850 border border-pentrax-700 text-center text-slate-400">4. Deep Intel</div>
+        <div id="step-5" class="p-2 rounded bg-pentrax-850 border border-pentrax-700 text-center text-slate-400">5. PoC Verify</div>
+        <div id="step-6" class="p-2 rounded bg-pentrax-850 border border-pentrax-700 text-center text-slate-400">6. Analysis</div>
+      </div>
+
+      <!-- Live Progress Bar -->
+      <div class="space-y-1.5">
+        <div class="flex justify-between text-xs font-mono text-slate-400">
+          <span>Progress: <span id="hud-percent" class="text-pentrax-red font-bold">0.0%</span> (<span id="hud-progress-done">0</span>/<span id="hud-progress-total">0</span>)</span>
+          <span>Speed: <span id="hud-rate" class="text-amber-400 font-bold">0</span> pkts/s | ETA: <span id="hud-eta" class="text-slate-300">--:--</span></span>
+        </div>
+        <div class="w-full bg-pentrax-950 rounded-full h-3 overflow-hidden border border-pentrax-700">
+          <div id="hud-progress-bar" class="bg-gradient-to-r from-red-600 via-pentrax-red to-rose-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- Metric Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4 pt-4 border-t border-pentrax-700/80 text-center">
+        <div class="p-2.5 bg-pentrax-950/70 rounded-lg border border-pentrax-700/60">
+          <div class="text-[11px] text-slate-400 font-medium">Hosts Alive</div>
+          <div id="stat-hosts-alive" class="text-xl font-bold font-mono text-emerald-400">0</div>
+        </div>
+        <div class="p-2.5 bg-pentrax-950/70 rounded-lg border border-pentrax-700/60">
+          <div class="text-[11px] text-slate-400 font-medium">Open Ports</div>
+          <div id="stat-open-ports" class="text-xl font-bold font-mono text-cyan-400">0</div>
+        </div>
+        <div class="p-2.5 bg-pentrax-950/70 rounded-lg border border-pentrax-700/60">
+          <div class="text-[11px] text-slate-400 font-medium">CVE Matches</div>
+          <div id="stat-cves-found" class="text-xl font-bold font-mono text-amber-400">0</div>
+        </div>
+        <div class="p-2.5 bg-pentrax-950/70 rounded-lg border border-pentrax-700/60">
+          <div class="text-[11px] text-slate-400 font-medium">Verified Vulns</div>
+          <div id="stat-vulns-found" class="text-xl font-bold font-mono text-pentrax-red">0</div>
+        </div>
+        <div class="p-2.5 bg-pentrax-950/70 rounded-lg border border-pentrax-700/60">
+          <div class="text-[11px] text-slate-400 font-medium">Filtered / Closed</div>
+          <div id="stat-filtered-closed" class="text-xl font-bold font-mono text-slate-400">0 / 0</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MAIN DASHBOARD CONTENT TABS -->
+    <div class="bg-pentrax-900 border border-pentrax-700 rounded-xl overflow-hidden shadow-2xl flex flex-col min-h-[550px]">
+      
+      <!-- TAB NAVIGATION & EXPORT BUTTONS -->
+      <div class="border-b border-pentrax-700 px-6 py-3 flex flex-wrap items-center justify-between gap-4 bg-pentrax-900">
+        <div class="flex space-x-2">
+          <button onclick="switchTab('tab-ports')" id="btn-tab-ports" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-pentrax-800 text-white flex items-center space-x-1.5 transition border border-pentrax-red/40">
+            <i class="fa-solid fa-network-wired text-pentrax-red"></i>
+            <span>Services & Ports</span>
+            <span id="tab-ports-badge" class="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-pentrax-950 text-slate-300">0</span>
+          </button>
+          <button onclick="switchTab('tab-vulns')" id="btn-tab-vulns" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-shield-virus text-pentrax-red"></i>
+            <span>CVEs & Vulnerabilities</span>
+            <span id="tab-vulns-badge" class="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-pentrax-950 text-slate-300">0</span>
+          </button>
+          <button onclick="switchTab('tab-attack-paths')" id="btn-tab-attack-paths" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-diagram-project text-purple-400"></i>
+            <span>MITRE ATT&CK Graph</span>
+          </button>
+          <button onclick="switchTab('tab-terminal')" id="btn-tab-terminal" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-terminal text-cyan-400"></i>
+            <span>Live Audit Console</span>
+          </button>
+          <button onclick="switchTab('tab-history')" id="btn-tab-history" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-clock-rotate-left text-amber-400"></i>
+            <span>Assessment History</span>
+          </button>
+        </div>
+
+        <!-- Report Exporters -->
+        <div class="flex items-center space-x-2">
+          <span class="text-xs text-slate-400 mr-1 hidden sm:inline">Export Dossier:</span>
+          <button onclick="exportReport('md')" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-cyan-400 text-xs rounded text-slate-200 flex items-center space-x-1 transition font-bold" title="Download README.md Report">
+            <i class="fa-brands fa-markdown text-cyan-400"></i>
+            <span>README.md</span>
+          </button>
+          <button onclick="copyMarkdownReport()" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-cyan-400 text-xs rounded text-slate-300 flex items-center space-x-1 transition" title="Copy Markdown to Clipboard">
+            <i class="fa-solid fa-copy text-slate-300"></i>
+            <span id="copy-btn-text">Copy MD</span>
+          </button>
+          <button onclick="exportReport('html')" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-pentrax-red text-xs rounded text-slate-300 flex items-center space-x-1 transition" title="Executive HTML Report">
+            <i class="fa-solid fa-file-code text-pentrax-red"></i>
+            <span>HTML</span>
+          </button>
+          <button onclick="exportReport('json')" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-pentrax-red text-xs rounded text-slate-300 flex items-center space-x-1 transition" title="Raw JSON Assessment">
+            <i class="fa-solid fa-file-lines text-amber-400"></i>
+            <span>JSON</span>
+          </button>
+          <button onclick="exportReport('csv')" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-pentrax-red text-xs rounded text-slate-300 flex items-center space-x-1 transition" title="Spreadsheet CSV">
+            <i class="fa-solid fa-file-csv text-emerald-400"></i>
+            <span>CSV</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB 1: SERVICES & PORTS TABLE -->
+      <div id="tab-ports" class="tab-panel p-6 flex-1">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-sm font-bold text-slate-300">Discovered Live Hosts & Active Ports</h3>
+          <input type="text" id="port-filter-input" onkeyup="filterPortsTable()" placeholder="Filter by IP, service, port..." class="px-3 py-1.5 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pentrax-red w-64">
+        </div>
+
+        <div class="overflow-x-auto rounded-lg border border-pentrax-700">
+          <table class="w-full text-left text-xs" id="table-ports">
+            <thead class="bg-pentrax-850 text-slate-300 uppercase font-mono border-b border-pentrax-700">
+              <tr>
+                <th class="p-3">Host IP</th>
+                <th class="p-3">Port / Proto</th>
+                <th class="p-3">State</th>
+                <th class="p-3">Service</th>
+                <th class="p-3">Banner / Version</th>
+                <th class="p-3">Risk Rating</th>
+                <th class="p-3">Vulnerability Findings</th>
+              </tr>
+            </thead>
+            <tbody id="ports-table-body" class="divide-y divide-pentrax-750 bg-pentrax-900/60">
+              <tr>
+                <td colspan="7" class="p-8 text-center text-slate-400">
+                  <i class="fa-solid fa-radar text-2xl mb-2 text-slate-600 block"></i>
+                  No ports discovered yet. Launch a new assessment above.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 2: CVES & VULNERABILITIES -->
+      <div id="tab-vulns" class="tab-panel p-6 flex-1 hidden">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-sm font-bold text-slate-300">Identified Vulnerabilities & CVSS v3.1 Scoring</h3>
+        </div>
+        <div id="vulns-container" class="space-y-4">
+          <div class="p-8 text-center text-slate-400">
+            <i class="fa-solid fa-shield-halved text-2xl mb-2 text-slate-600 block"></i>
+            No vulnerabilities detected for the active assessment.
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: MITRE ATT&CK GRAPH VISUALIZER -->
+      <div id="tab-attack-paths" class="tab-panel p-6 flex-1 flex flex-col hidden">
+        <div class="flex justify-between items-center mb-2">
+          <div>
+            <h3 class="text-sm font-bold text-slate-300">Interactive Attack Path & MITRE ATT&CK Topology</h3>
+            <p class="text-xs text-slate-400">Target Host ➔ Open Service ➔ Vulnerability ➔ MITRE Technique ➔ Threat Actor Campaign</p>
+          </div>
+          <button onclick="renderAttackGraph()" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 rounded text-xs text-slate-300">
+            <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh Layout
+          </button>
+        </div>
+        <div id="attack-graph-canvas" class="w-full flex-1 min-h-[450px] bg-pentrax-950 border border-pentrax-700 rounded-lg relative overflow-hidden">
+          <!-- Vis.js canvas is mounted here -->
+        </div>
+      </div>
+
+      <!-- TAB 4: LIVE TERMINAL CONSOLE -->
+      <div id="tab-terminal" class="tab-panel p-6 flex-1 flex flex-col hidden">
+        <div class="flex justify-between items-center mb-2">
+          <h3 class="text-sm font-bold text-slate-300">Live Scanning Engine Audit Trail</h3>
+          <button onclick="clearTerminalLogs()" class="text-xs text-slate-400 hover:text-pentrax-red">Clear</button>
+        </div>
+        <div id="terminal-container" class="w-full flex-1 min-h-[400px] max-h-[500px] overflow-y-auto bg-pentrax-950 border border-pentrax-700 rounded-lg p-4 font-mono text-xs text-emerald-400 space-y-1">
+          <div class="text-slate-400">[00:00:00] PENTRAX engine initialized. Ready for assessment instructions.</div>
+        </div>
+      </div>
+
+      <!-- TAB 5: SCAN HISTORY -->
+      <div id="tab-history" class="tab-panel p-6 flex-1 hidden">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-sm font-bold text-slate-300">Saved Assessment History</h3>
+          <button onclick="loadScanHistory()" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 rounded text-xs text-slate-300">
+            <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh
+          </button>
+        </div>
+        <div class="overflow-x-auto rounded-lg border border-pentrax-700">
+          <table class="w-full text-left text-xs" id="table-history">
+            <thead class="bg-pentrax-850 text-slate-300 uppercase font-mono border-b border-pentrax-700">
+              <tr>
+                <th class="p-3">Scan ID</th>
+                <th class="p-3">Target</th>
+                <th class="p-3">Status</th>
+                <th class="p-3">Duration</th>
+                <th class="p-3">Hosts</th>
+                <th class="p-3">Open Ports</th>
+                <th class="p-3">Timestamp</th>
+                <th class="p-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body" class="divide-y divide-pentrax-750 bg-pentrax-900/60">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- NEW SCAN MODAL -->
+  <div id="modal-new-scan" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-pentrax-900 border border-pentrax-700 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
+      
+      <!-- Modal Header with PENTRAX Logo -->
+      <div class="px-6 py-4 border-b border-pentrax-700 flex items-center justify-between bg-pentrax-850">
+        <div class="flex items-center space-x-3">
+          <svg class="w-7 h-7" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="60,12 105,45 88,98 32,98 15,45" stroke="#ff3344" stroke-width="4" fill="none"/>
+            <polygon points="60,26 92,49 80,87 40,87 28,49" stroke="#ffffff" stroke-width="3" fill="none"/>
+            <path d="M43,58 L54,71 L77,44" stroke="#ff3344" stroke-width="6" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <h3 class="font-extrabold text-white text-base">Launch PENTRAX Assessment</h3>
+            <p class="text-[10px] text-pentrax-red font-bold tracking-wider">WEB VULNERABILITY ASSESSMENT</p>
+          </div>
+        </div>
+        <button onclick="closeNewScanModal()" class="text-slate-400 hover:text-white transition">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body Form -->
+      <form id="form-scan" onsubmit="handleStartScan(event)" class="p-6 space-y-5 overflow-y-auto max-h-[80vh]">
+
+        <!-- Target Input -->
+        <div>
+          <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Target Address, Domain, or Subnet *</label>
+          <div class="relative">
+            <input type="text" id="scan-target" required placeholder="e.g., example.com, 192.168.1.0/24, 127.0.0.1"
+              class="w-full px-4 py-2.5 bg-pentrax-950 border border-pentrax-700 rounded-xl font-mono text-sm text-pentrax-red focus:outline-none focus:border-pentrax-red focus:ring-1 focus:ring-pentrax-red">
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">Domain names are automatically resolved via DNS to IP before scanning.</p>
+        </div>
+
+        <!-- Port Presets & Specification -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Port Range Selection</label>
+            <select id="scan-ports" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pentrax-red">
+              <option value="top50">Quick Reconnaissance (Top 50 Ports)</option>
+              <option value="top100" selected>Standard Security Scan (Top 100 Ports)</option>
+              <option value="1-1024">Privileged Ports (1 - 1024)</option>
+              <option value="all">Full Comprehensive Range (1 - 65535)</option>
+              <option value="22,80,443,3306,5432,6379,8080,8443">Common Critical Services</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Scan Technique</label>
+            <select id="scan-type" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pentrax-red">
+              <option value="connect">TCP Connect (Unprivileged Safe Mode)</option>
+              <option value="syn">SYN Stealth Scan (Requires Root/Raw Socket)</option>
+              <option value="ack">ACK Firewall Rule Probe (Requires Root)</option>
+              <option value="fin">FIN Scan (Requires Root)</option>
+              <option value="xmas">XMAS Scan (Requires Root)</option>
+              <option value="null">NULL Scan (Requires Root)</option>
+              <option value="window">TCP Window Analysis (Requires Root)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Timing & Concurrency -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Timing Template</label>
+            <select id="scan-timing" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pentrax-red">
+              <option value="T3" selected>T3 — Normal (Recommended)</option>
+              <option value="T4">T4 — Aggressive (Fast Lab Tests)</option>
+              <option value="T2">T2 — Polite (Rate-Limited)</option>
+              <option value="T1">T1 — Sneaky (Slow Evasion)</option>
+              <option value="T0">T0 — Paranoid (Extreme Evasion)</option>
+              <option value="T5">T5 — Insane (High Concurrency)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Concurrency (Max Sockets)</label>
+            <input type="number" id="scan-concurrency" value="2000" min="50" max="10000" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pentrax-red">
+          </div>
+        </div>
+
+        <!-- Assessment Capabilities Toggles -->
+        <div class="space-y-2 pt-2 border-t border-pentrax-700">
+          <label class="block text-xs font-bold text-slate-300 uppercase mb-2">Detection & Intelligence Modules</label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <label class="flex items-center space-x-2 p-2 bg-pentrax-950/80 rounded-lg border border-pentrax-700 cursor-pointer hover:border-pentrax-red transition">
+              <input type="checkbox" id="scan-deep" checked class="rounded border-pentrax-700 text-pentrax-red focus:ring-0">
+              <span class="text-slate-200 font-medium">Deep Intel Probes (15+ Services)</span>
+            </label>
+            <label class="flex items-center space-x-2 p-2 bg-pentrax-950/80 rounded-lg border border-pentrax-700 cursor-pointer hover:border-pentrax-red transition">
+              <input type="checkbox" id="scan-dast" checked class="rounded border-pentrax-700 text-pentrax-red focus:ring-0">
+              <span class="text-slate-200 font-medium">Web DAST (CORS, Headers, Secrets)</span>
+            </label>
+            <label class="flex items-center space-x-2 p-2 bg-pentrax-950/80 rounded-lg border border-pentrax-700 cursor-pointer hover:border-pentrax-red transition">
+              <input type="checkbox" id="scan-ssl" checked class="rounded border-pentrax-700 text-pentrax-red focus:ring-0">
+              <span class="text-slate-200 font-medium">SSL/TLS Cryptographic Audit</span>
+            </label>
+            <label class="flex items-center space-x-2 p-2 bg-pentrax-950/80 rounded-lg border border-pentrax-700 cursor-pointer hover:border-pentrax-red transition">
+              <input type="checkbox" id="scan-verify" checked class="rounded border-pentrax-700 text-pentrax-red focus:ring-0">
+              <span class="text-slate-200 font-medium">Safe PoC Verification Checks</span>
+            </label>
+            <label class="flex items-center space-x-2 p-2 bg-pentrax-950/80 rounded-lg border border-pentrax-700 cursor-pointer hover:border-pentrax-red transition">
+              <input type="checkbox" id="scan-icmp" class="rounded border-pentrax-700 text-pentrax-red focus:ring-0">
+              <span class="text-slate-200 font-medium">ICMP Discovery Sweep</span>
+            </label>
+            <label class="flex items-center space-x-2 p-2 bg-pentrax-950/80 rounded-lg border border-pentrax-700 cursor-pointer hover:border-pentrax-red transition">
+              <input type="checkbox" id="scan-udp" class="rounded border-pentrax-700 text-pentrax-red focus:ring-0">
+              <span class="text-slate-200 font-medium">UDP Vulnerability Checks</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Mandatory Authorization Gate -->
+        <div class="p-3.5 bg-pentrax-darkred border border-pentrax-red/40 rounded-xl space-y-2">
+          <div class="flex items-start space-x-2.5">
+            <i class="fa-solid fa-triangle-exclamation text-pentrax-red text-sm mt-0.5"></i>
+            <div>
+              <h4 class="text-xs font-bold text-white uppercase">Ethical Hacking Rules of Engagement</h4>
+              <p class="text-[11px] text-slate-300 leading-relaxed mt-0.5">
+                Scanning networks or assets without explicit, written authorization is illegal. You must hold permission or be testing in an authorized laboratory environment.
+              </p>
+            </div>
+          </div>
+          <label class="flex items-center space-x-2 pt-1 cursor-pointer">
+            <input type="checkbox" id="scan-auth" required class="rounded border-pentrax-red text-pentrax-red focus:ring-0">
+            <span class="text-xs font-bold text-pentrax-red">I confirm authorization to perform security testing on the target.</span>
+          </label>
+        </div>
+
+        <!-- Modal Actions -->
+        <div class="flex justify-end space-x-3 pt-2">
+          <button type="button" onclick="closeNewScanModal()" class="px-4 py-2 bg-pentrax-800 hover:bg-pentrax-750 text-slate-300 text-xs font-semibold rounded-lg transition">Cancel</button>
+          <button type="submit" id="btn-submit-scan" class="px-5 py-2 bg-gradient-to-r from-red-600 to-pentrax-red hover:from-red-500 hover:to-rose-500 text-white text-xs font-bold rounded-lg shadow-lg glow-red flex items-center space-x-2 transition">
+            <i class="fa-solid fa-play"></i>
+            <span>BEGIN ASSESSMENT</span>
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- RBAC LOGIN MODAL -->
+  <div id="modal-login" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-pentrax-900 border border-pentrax-700 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-pentrax-700">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-shield-halved text-pentrax-red"></i>
+          <h3 class="text-sm font-bold text-white tracking-wide uppercase">PENTRAX Authentication</h3>
+        </div>
+        <button onclick="closeLoginModal()" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form id="form-login" onsubmit="handleLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Username</label>
+          <input type="text" id="login-username" required placeholder="admin or operator" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pentrax-red font-mono">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Password</label>
+          <input type="password" id="login-password" required placeholder="••••••••" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pentrax-red font-mono">
+        </div>
+
+        <div id="login-error-msg" class="hidden text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-lg border border-rose-800"></div>
+
+        <div class="text-[11px] text-slate-400 bg-pentrax-950 p-2.5 rounded-lg border border-pentrax-800 space-y-1">
+          <p class="font-semibold text-slate-300">Default Credentials:</p>
+          <p class="font-mono text-[10px]">Administrator: <span class="text-pentrax-red font-bold">admin</span> / <span class="text-slate-300">pentrax1337</span></p>
+          <p class="font-mono text-[10px]">Operator: <span class="text-amber-400 font-bold">operator</span> / <span class="text-slate-300">operator123</span></p>
+        </div>
+
+        <div class="flex justify-end space-x-2 pt-2">
+          <button type="button" onclick="closeLoginModal()" class="px-4 py-2 bg-pentrax-800 hover:bg-pentrax-750 text-slate-300 text-xs font-semibold rounded-lg">Cancel</button>
+          <button type="submit" id="btn-submit-login" class="px-5 py-2 bg-gradient-to-r from-red-600 to-pentrax-red hover:from-red-500 text-white text-xs font-bold rounded-lg shadow-lg">Sign In</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT APPLICATION LOGIC -->
+  <script>
+    let activeScanId = null;
+    let activeWebSocket = null;
+    let currentScanData = null;
+    let systemCaps = null;
+    let attackNetwork = null;
+    let currentUser = null;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      await checkAuthStatus();
+      await fetchSystemCapabilities();
+      await loadScanHistory();
+    });
+
+    async function checkAuthStatus() {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          currentUser = await res.json();
+          renderUserBadge();
+        } else {
+          currentUser = null;
+          renderUserBadge();
+        }
+      } catch (e) {
+        currentUser = null;
+        renderUserBadge();
+      }
+    }
+
+    function renderUserBadge() {
+      const loginBtn = document.getElementById('btn-login-trigger');
+      const profileBadge = document.getElementById('user-profile-badge');
+      if (currentUser) {
+        loginBtn.classList.add('hidden');
+        profileBadge.classList.remove('hidden');
+        document.getElementById('user-display-name').innerText = currentUser.username;
+        const roleBadge = document.getElementById('user-role-badge');
+        roleBadge.innerText = currentUser.role;
+        if (currentUser.role === 'admin') {
+          roleBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-pentrax-darkred text-pentrax-red border border-pentrax-red/40';
+        } else if (currentUser.role === 'operator') {
+          roleBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-amber-950 text-amber-400 border border-amber-600/40';
+        } else {
+          roleBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-pentrax-950 text-slate-400 border border-slate-700';
+        }
+      } else {
+        loginBtn.classList.remove('hidden');
+        profileBadge.classList.add('hidden');
+      }
+    }
+
+    function openLoginModal() {
+      document.getElementById('login-error-msg').classList.add('hidden');
+      document.getElementById('modal-login').classList.remove('hidden');
+    }
+
+    function closeLoginModal() {
+      document.getElementById('modal-login').classList.add('hidden');
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value;
+      const errorEl = document.getElementById('login-error-msg');
+      const submitBtn = document.getElementById('btn-submit-login');
+
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Authenticating...';
+      errorEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorEl.innerText = data.error || 'Login failed';
+          errorEl.classList.remove('hidden');
+        } else {
+          currentUser = data.user;
+          renderUserBadge();
+          closeLoginModal();
+          await loadScanHistory();
+        }
+      } catch (err) {
+        errorEl.innerText = 'Network error during login';
+        errorEl.classList.remove('hidden');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Sign In';
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+      } catch (e) {}
+      currentUser = null;
+      renderUserBadge();
+      await loadScanHistory();
+    }
+
+    async function fetchSystemCapabilities() {
+      try {
+        const res = await fetch('/api/system/capabilities');
+        systemCaps = await res.json();
+        
+        const badge = document.getElementById('sys-cap-badge');
+        if (systemCaps.is_root) {
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span class="text-emerald-300 font-bold font-mono text-[11px]">PRIVILEGED (RAW SYN UNLOCKED)</span>`;
+          document.getElementById('scan-type').value = 'syn';
+        } else {
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-cyan-400"></span><span class="text-cyan-300 font-mono text-[11px]">UNPRIVILEGED (CONNECT MODE)</span>`;
+          document.getElementById('scan-type').value = 'connect';
+        }
+      } catch (err) {
+        console.error('Failed to query system capabilities:', err);
+      }
+    }
+
+    function openNewScanModal() {
+      document.getElementById('modal-new-scan').classList.remove('hidden');
+    }
+
+    function closeNewScanModal() {
+      document.getElementById('modal-new-scan').classList.add('hidden');
+    }
+
+    async function handleStartScan(event) {
+      event.preventDefault();
+      const target = document.getElementById('scan-target').value.trim();
+      const ports = document.getElementById('scan-ports').value;
+      const scan_type = document.getElementById('scan-type').value;
+      const timing = document.getElementById('scan-timing').value;
+      const concurrency = parseInt(document.getElementById('scan-concurrency').value) || 2000;
+      const deep = document.getElementById('scan-deep').checked;
+      const dast = document.getElementById('scan-dast').checked;
+      const ssl_audit = document.getElementById('scan-ssl').checked;
+      const verify = document.getElementById('scan-verify').checked;
+      const icmp = document.getElementById('scan-icmp').checked;
+      const udp = document.getElementById('scan-udp').checked;
+      const authorized = document.getElementById('scan-auth').checked;
+
+      const payload = {
+        target,
+        ports,
+        scan_type,
+        timing,
+        concurrency,
+        deep,
+        dast,
+        ssl_audit,
+        verify,
+        icmp,
+        udp,
+        authorized
+      };
+
+      const submitBtn = document.getElementById('btn-submit-scan');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Starting...</span>`;
+
+      try {
+        const res = await fetch('/api/scans/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          alert('Failed to start scan: ' + (data.error || 'Unknown error'));
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<i class="fa-solid fa-play"></i><span>BEGIN ASSESSMENT</span>`;
+          return;
+        }
+
+        closeNewScanModal();
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa-solid fa-play"></i><span>BEGIN ASSESSMENT</span>`;
+
+        connectScanWebSocket(data.scan.id);
+        switchTab('tab-ports');
+      } catch (err) {
+        alert('Error initiating scan: ' + err.message);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa-solid fa-play"></i><span>BEGIN ASSESSMENT</span>`;
+      }
+    }
+
+    function connectScanWebSocket(scanId) {
+      if (activeWebSocket) {
+        activeWebSocket.close();
+      }
+
+      activeScanId = scanId;
+      document.getElementById('scan-hud').classList.remove('hidden');
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/scans/${scanId}`;
+      activeWebSocket = new WebSocket(wsUrl);
+
+      activeWebSocket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleScanEvent(data);
+      };
+
+      activeWebSocket.onerror = (err) => {
+        console.error('WebSocket error:', err);
+      };
+    }
+
+    function handleScanEvent(ev) {
+      if (ev.type === 'sync_state') {
+        const scan = ev.scan;
+        currentScanData = scan;
+        updateHUD(scan);
+        renderPortsTable(scan.open_ports, scan.result);
+        renderVulnsCards(scan.result);
+        if (scan.logs) {
+          const terminal = document.getElementById('terminal-container');
+          terminal.innerHTML = scan.logs.map(l => `<div>${escapeHtml(l)}</div>`).join('');
+          terminal.scrollTop = terminal.scrollHeight;
+        }
+        if (scan.result) {
+          renderAttackGraph();
+        }
+      } else if (ev.type === 'phase') {
+        document.getElementById('hud-phase-desc').innerText = `Phase ${ev.phase}: ${ev.name} — ${ev.detail}`;
+        highlightStepper(ev.phase);
+      } else if (ev.type === 'progress') {
+        document.getElementById('hud-percent').innerText = `${ev.percent.toFixed(1)}%`;
+        document.getElementById('hud-progress-bar').style.width = `${ev.percent}%`;
+        document.getElementById('hud-progress-done').innerText = ev.done;
+        document.getElementById('hud-progress-total').innerText = ev.total;
+        document.getElementById('hud-rate').innerText = ev.rate;
+        const etaMin = Math.floor(ev.eta_seconds / 60);
+        const etaSec = ev.eta_seconds % 60;
+        document.getElementById('hud-eta').innerText = `${etaMin}m${etaSec.toString().padStart(2, '0')}s`;
+        document.getElementById('stat-open-ports').innerText = ev.found;
+        document.getElementById('stat-filtered-closed').innerText = `${ev.filtered} / ${ev.closed}`;
+      } else if (ev.type === 'hosts_update') {
+        document.getElementById('stat-hosts-alive').innerText = ev.live_hosts.length;
+      } else if (ev.type === 'port_found') {
+        appendPortRow(ev);
+      } else if (ev.type === 'vulnerability_found') {
+        const badge = document.getElementById('tab-vulns-badge');
+        const count = (parseInt(badge.innerText || '0') || 0) + 1;
+        badge.innerText = count;
+        document.getElementById('stat-vulns-found').innerText = count;
+      } else if (ev.type === 'scan_completed') {
+        currentScanData = currentScanData || {};
+        currentScanData.result = ev.export_data;
+        currentScanData.status = 'completed';
+        document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>COMPLETED</span>`;
+        document.getElementById('hud-status-badge').className = 'px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 flex items-center space-x-1.5';
+        document.getElementById('hud-progress-bar').style.width = '100%';
+        document.getElementById('hud-percent').innerText = '100.0%';
+        renderVulnsCards(ev.export_data);
+        renderAttackGraph();
+        loadScanHistory();
+      } else if (ev.type === 'status_change') {
+        if (ev.status === 'stopped') {
+          document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>STOPPED</span>`;
+          document.getElementById('hud-status-badge').className = 'px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-rose-950/80 text-rose-400 border border-rose-500/40 flex items-center space-x-1.5';
+        }
+      } else if (ev.type === 'log') {
+        const terminal = document.getElementById('terminal-container');
+        const line = document.createElement('div');
+        line.innerText = ev.text;
+        terminal.appendChild(line);
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+    }
+
+    function updateHUD(scan) {
+      document.getElementById('hud-target').innerText = scan.target || (scan.config && scan.config.target) || '--';
+      document.getElementById('hud-scan-type').innerText = (scan.config && scan.config.scan_type) || 'CONNECT';
+      document.getElementById('stat-hosts-alive').innerText = scan.live_hosts ? scan.live_hosts.length : 0;
+      document.getElementById('stat-open-ports').innerText = scan.open_ports ? scan.open_ports.length : 0;
+
+      if (scan.status === 'completed') {
+        document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>COMPLETED</span>`;
+        document.getElementById('hud-status-badge').className = 'px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 flex items-center space-x-1.5';
+        document.getElementById('hud-progress-bar').style.width = '100%';
+        document.getElementById('hud-percent').innerText = '100.0%';
+      } else if (scan.status === 'stopped') {
+        document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>STOPPED</span>`;
+        document.getElementById('hud-status-badge').className = 'px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-rose-950/80 text-rose-400 border border-rose-500/40 flex items-center space-x-1.5';
+      }
+
+      if (scan.current_phase) {
+        highlightStepper(scan.current_phase.phase);
+        document.getElementById('hud-phase-desc').innerText = `Phase ${scan.current_phase.phase}: ${scan.current_phase.name} — ${scan.current_phase.detail}`;
+      }
+    }
+
+    function highlightStepper(phase) {
+      for (let i = 1; i <= 6; i++) {
+        const stepEl = document.getElementById(`step-${i}`);
+        if (!stepEl) continue;
+        if (i < phase) {
+          stepEl.className = 'p-2 rounded bg-pentrax-850 border border-emerald-500/50 text-center text-emerald-400 font-bold';
+        } else if (i === phase) {
+          stepEl.className = 'p-2 rounded bg-pentrax-darkred border border-pentrax-red text-center text-white font-bold glow-red-sm';
+        } else {
+          stepEl.className = 'p-2 rounded bg-pentrax-850 border border-pentrax-700 text-center text-slate-500';
+        }
+      }
+    }
+
+    async function stopCurrentScan() {
+      if (!activeScanId) return;
+      if (!confirm('Are you sure you want to stop the active scan?')) return;
+      await fetch(`/api/scans/${activeScanId}/stop`, { method: 'POST' });
+    }
+
+    function renderPortsTable(ports, result) {
+      const tbody = document.getElementById('ports-table-body');
+      if (!ports || ports.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">No open ports found.</td></tr>`;
+        return;
+      }
+
+      document.getElementById('tab-ports-badge').innerText = ports.length;
+
+      let html = '';
+      ports.forEach(p => {
+        let versionStr = '-';
+        let riskRating = 'INFO';
+        let findings = '-';
+
+        if (result && result.results && result.results[p.ip]) {
+          const hostObj = result.results[p.ip];
+          const matchedPort = (hostObj.ports || []).find(e => e.port === p.port);
+          if (matchedPort) {
+            versionStr = matchedPort.version || '-';
+            riskRating = matchedPort.risk_level || 'INFO';
+            if (matchedPort.cves && matchedPort.cves.length > 0) {
+              findings = matchedPort.cves.map(c => `<span class="text-pentrax-red font-semibold">⚠ ${escapeHtml(c.cve)} (${c.cvss_score || ''})</span>`).join('<br>');
+            }
+          }
+        }
+
+        const riskColor = {
+          'CRITICAL': 'bg-pentrax-darkred text-pentrax-red border border-pentrax-red/50 font-black',
+          'HIGH': 'bg-amber-950 text-amber-400 border border-amber-500/40 font-bold',
+          'MEDIUM': 'bg-cyan-950 text-cyan-400 border border-cyan-500/40',
+          'LOW': 'bg-pentrax-800 text-slate-300',
+          'INFO': 'bg-pentrax-800 text-slate-400'
+        }[riskRating] || 'bg-pentrax-800 text-slate-400';
+
+        html += `
+          <tr class="hover:bg-pentrax-800/60 transition">
+            <td class="p-3 font-mono font-bold text-white">${escapeHtml(p.ip)}</td>
+            <td class="p-3 font-mono text-slate-200">${p.port} / <span class="text-pentrax-red font-bold">${p.protocol || 'tcp'}</span></td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 uppercase">${escapeHtml(p.state || 'open')}</span></td>
+            <td class="p-3 font-bold text-slate-200">${escapeHtml(p.service || 'unknown')}</td>
+            <td class="p-3 font-mono text-slate-400 text-[11px]">${escapeHtml(versionStr)}</td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] ${riskColor}">${riskRating}</span></td>
+            <td class="p-3 text-[11px]">${findings}</td>
+          </tr>
+        `;
+      });
+      tbody.innerHTML = html;
+    }
+
+    function appendPortRow(ev) {
+      const tbody = document.getElementById('ports-table-body');
+      if (tbody.innerHTML.includes('No open ports found') || tbody.innerHTML.includes('No ports discovered yet')) {
+        tbody.innerHTML = '';
+      }
+      const countBadge = document.getElementById('tab-ports-badge');
+      countBadge.innerText = parseInt(countBadge.innerText || '0') + 1;
+
+      const row = document.createElement('tr');
+      row.className = 'hover:bg-pentrax-800/60 transition';
+      row.innerHTML = `
+        <td class="p-3 font-mono font-bold text-white">${escapeHtml(ev.ip)}</td>
+        <td class="p-3 font-mono text-slate-200">${ev.port} / <span class="text-pentrax-red font-bold">${ev.protocol || 'tcp'}</span></td>
+        <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 uppercase">${escapeHtml(ev.state || 'open')}</span></td>
+        <td class="p-3 font-bold text-slate-200">${escapeHtml(ev.service || 'unknown')}</td>
+        <td class="p-3 font-mono text-slate-400 text-[11px]">-</td>
+        <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] bg-pentrax-800 text-slate-400">INFO</span></td>
+        <td class="p-3 text-[11px]">-</td>
+      `;
+      tbody.prepend(row);
+    }
+
+    function renderVulnsCards(result) {
+      const container = document.getElementById('vulns-container');
+      if (!result || !result.results) {
+        container.innerHTML = `<div class="p-8 text-center text-slate-400">No vulnerabilities detected for this assessment.</div>`;
+        return;
+      }
+
+      let allVulns = [];
+      Object.keys(result.results).forEach(ip => {
+        const host = result.results[ip];
+        (host.ports || []).forEach(p => {
+          (p.cves || []).forEach(cve => {
+            allVulns.push({ ip, port: p.port, service: p.service, ...cve });
+          });
+          (p.vulns || []).forEach(v => {
+            const vObj = typeof v === 'object' ? v : { title: v };
+            allVulns.push({ ip, port: p.port, service: p.service, ...vObj, severity: vObj.risk_level || vObj.severity || 'HIGH' });
+          });
+        });
+        (host.vulns || []).forEach(v => {
+          const vObj = typeof v === 'object' ? v : { title: v };
+          allVulns.push({ ip, ...vObj, severity: vObj.risk_level || vObj.severity || 'HIGH' });
+        });
+      });
+
+      // Deduplicate
+      const seen = new Set();
+      const uniqueVulns = [];
+      allVulns.forEach(v => {
+        const key = `${v.ip}:${v.port || 0}:${v.id || v.cve || v.title}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueVulns.push(v);
+        }
+      });
+
+      document.getElementById('tab-vulns-badge').innerText = uniqueVulns.length;
+      document.getElementById('stat-cves-found').innerText = result.cves_found || uniqueVulns.length;
+      document.getElementById('stat-vulns-found').innerText = uniqueVulns.length || result.vulns_found || 0;
+
+      if (uniqueVulns.length === 0) {
+        container.innerHTML = `<div class="p-8 text-center text-emerald-400 font-mono">✓ Zero Critical/High vulnerabilities detected on scanned endpoints.</div>`;
+        return;
+      }
+
+      let html = '';
+      uniqueVulns.forEach(v => {
+        const sevColor = {
+          'CRITICAL': 'border-pentrax-red bg-pentrax-darkred/40 text-pentrax-red',
+          'HIGH': 'border-amber-500 bg-amber-950/20 text-amber-400',
+          'MEDIUM': 'border-cyan-500 bg-cyan-950/20 text-cyan-400',
+          'LOW': 'border-slate-500 bg-slate-900/40 text-slate-300'
+        }[v.severity] || 'border-slate-600 bg-pentrax-800 text-slate-300';
+
+        html += `
+          <div class="border-l-4 ${sevColor} bg-pentrax-850 p-4 rounded-r-xl border border-pentrax-700 space-y-2.5">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <div class="flex items-center flex-wrap gap-2">
+                <span class="px-2 py-0.5 text-xs font-mono font-bold rounded ${sevColor}">${v.severity || 'HIGH'}</span>
+                ${v.category ? `<span class="px-2 py-0.5 text-[11px] font-mono font-bold rounded bg-pentrax-950 text-slate-300 border border-slate-700">${escapeHtml(v.category)}</span>` : ''}
+                <span class="font-bold text-white text-sm">${escapeHtml(v.cve || v.id || v.title || 'Security Finding')}</span>
+                ${v.cvss_score ? `<span class="text-xs px-2 py-0.5 rounded bg-pentrax-950 font-mono text-pentrax-red font-bold border border-pentrax-red/30">CVSS ${v.cvss_score}</span>` : ''}
+              </div>
+              <div class="flex items-center space-x-2">
+                ${v.remediation_sla ? `<span class="text-xs px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 font-mono font-semibold border border-amber-600/40"><i class="fa-regular fa-clock mr-1"></i>SLA: ${escapeHtml(v.remediation_sla)}</span>` : ''}
+                <span class="text-xs font-mono text-white font-bold">${v.ip}${v.port ? ':' + v.port : ''}</span>
+              </div>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(v.description || 'Vulnerability detected based on fingerprint or probe verification.')}</p>
+            ${v.evidence ? `<div class="p-2 bg-pentrax-950 rounded text-[11px] font-mono text-slate-400 border border-pentrax-700/60 overflow-x-auto"><span class="text-slate-500 font-bold uppercase mr-1">Evidence:</span> ${escapeHtml(v.evidence)}</div>` : ''}
+            ${v.remediation ? `<div class="p-2 bg-emerald-950/30 rounded text-[11px] text-emerald-300 border border-emerald-500/20"><span class="font-bold uppercase mr-1">Remediation:</span> ${escapeHtml(v.remediation)}</div>` : ''}
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    }
+
+    function renderAttackGraph() {
+      const container = document.getElementById('attack-graph-canvas');
+      if (!currentScanData || !currentScanData.result || !currentScanData.result.results) {
+        container.innerHTML = `<div class="p-8 text-center text-slate-400">Run or select a completed scan to view the MITRE ATT&CK graph.</div>`;
+        return;
+      }
+
+      const results = currentScanData.result.results;
+      const nodes = [];
+      const edges = [];
+      let idCounter = 1;
+
+      Object.keys(results).forEach(ip => {
+        const host = results[ip];
+        const hostId = idCounter++;
+        nodes.push({
+          id: hostId,
+          label: `Host: ${ip}\n[${host.risk_level || 'LOW'}]`,
+          shape: 'box',
+          color: { background: '#121620', border: host.risk_level === 'CRITICAL' ? '#ff3344' : '#64748b' },
+          font: { color: '#ffffff', face: 'JetBrains Mono' }
+        });
+
+        (host.ports || []).forEach(p => {
+          if (p.risk_level === 'CRITICAL' || p.risk_level === 'HIGH' || (p.cves && p.cves.length > 0)) {
+            const portId = idCounter++;
+            nodes.push({
+              id: portId,
+              label: `${p.port}/${p.service}\n[${p.risk_level || 'OPEN'}]`,
+              shape: 'ellipse',
+              color: { background: '#181e2b', border: '#ff3344' },
+              font: { color: '#ff4d5a', face: 'JetBrains Mono' }
+            });
+            edges.push({ from: hostId, to: portId, arrows: 'to', label: 'exposes', color: { color: '#ff3344' } });
+
+            (host.attack_paths || []).forEach(ap => {
+              if (ap.port === p.port) {
+                const vulnId = idCounter++;
+                nodes.push({
+                  id: vulnId,
+                  label: `${ap.service}\n[${ap.impact || 'RCE'}]\nExploit: ${ap.risk_score || ''}`,
+                  shape: 'diamond',
+                  color: { background: '#3d0c12', border: '#ff3344' },
+                  font: { color: '#ff3344', face: 'JetBrains Mono' }
+                });
+                edges.push({ from: portId, to: vulnId, arrows: 'to', label: 'exploitable', color: { color: '#ff3344' } });
+
+                (ap.mitre_techniques || []).slice(0, 2).forEach(t => {
+                  const mitreId = idCounter++;
+                  nodes.push({
+                    id: mitreId,
+                    label: `MITRE: ${t}`,
+                    shape: 'box',
+                    color: { background: '#202738', border: '#ffffff' },
+                    font: { color: '#ffffff', face: 'JetBrains Mono' }
+                  });
+                  edges.push({ from: vulnId, to: mitreId, arrows: 'to', dashes: true, color: { color: '#94a3b8' } });
+                });
+              }
+            });
+          }
+        });
+      });
+
+      if (nodes.length === 0) {
+        container.innerHTML = `<div class="p-8 text-center text-slate-400">No attack chains or high-risk services found to graph.</div>`;
+        return;
+      }
+
+      const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+      const options = {
+        physics: { barnesHut: { gravitationalConstant: -3000, springLength: 120 } },
+        interaction: { hover: true, tooltipDelay: 200 }
+      };
+
+      if (attackNetwork) {
+        attackNetwork.destroy();
+      }
+      attackNetwork = new vis.Network(container, data, options);
+    }
+
+    async function loadScanHistory() {
+      try {
+        const res = await fetch('/api/scans');
+        const list = await res.json();
+        const tbody = document.getElementById('history-table-body');
+        
+        if (!list || list.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">No previous assessments recorded.</td></tr>`;
+          return;
+        }
+
+        let html = '';
+        list.forEach(item => {
+          const statusBadge = {
+            'completed': '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-500/30">COMPLETED</span>',
+            'running': '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-pentrax-darkred text-pentrax-red border border-pentrax-red/40">RUNNING</span>',
+            'stopped': '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-950 text-red-400 border border-red-500/30">STOPPED</span>',
+            'failed': '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-950 text-red-400 border border-red-500/30">FAILED</span>'
+          }[item.status] || item.status;
+
+          html += `
+            <tr class="hover:bg-pentrax-800/60 transition">
+              <td class="p-3 font-mono font-bold text-pentrax-red">${item.id}</td>
+              <td class="p-3 font-mono text-slate-200">${escapeHtml(item.target || '-')}</td>
+              <td class="p-3">${statusBadge}</td>
+              <td class="p-3 font-mono text-slate-400">${item.duration_seconds ? item.duration_seconds + 's' : '-'}</td>
+              <td class="p-3 font-mono text-emerald-400 font-bold">${item.live_hosts_count || 0}</td>
+              <td class="p-3 font-mono text-cyan-400 font-bold">${item.open_ports_count || 0}</td>
+              <td class="p-3 text-slate-400 text-[11px]">${new Date(item.created_at).toLocaleString()}</td>
+              <td class="p-3 text-right space-x-2">
+                <button onclick="viewScanHistoryItem('${item.id}')" class="px-2.5 py-1 bg-pentrax-800 hover:bg-pentrax-red rounded text-white text-xs font-bold transition" title="Load this scan">View</button>
+                <button onclick="deleteScanHistoryItem('${item.id}')" class="px-2 py-1 bg-pentrax-950 hover:bg-red-950 text-red-400 rounded text-xs" title="Delete scan"><i class="fa-solid fa-trash"></i></button>
+              </td>
+            </tr>
+          `;
+        });
+        tbody.innerHTML = html;
+      } catch (err) {
+        console.error('Failed to load scan history:', err);
+      }
+    }
+
+    async function viewScanHistoryItem(scanId) {
+      const res = await fetch(`/api/scans/${scanId}`);
+      if (!res.ok) return alert('Failed to retrieve scan data');
+      const data = await res.json();
+      currentScanData = data;
+      activeScanId = scanId;
+      document.getElementById('scan-hud').classList.remove('hidden');
+      updateHUD(data);
+      renderPortsTable(data.open_ports, data.result);
+      renderVulnsCards(data.result);
+      if (data.logs) {
+        const terminal = document.getElementById('terminal-container');
+        terminal.innerHTML = data.logs.map(l => `<div>${escapeHtml(l)}</div>`).join('');
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+      renderAttackGraph();
+      switchTab('tab-ports');
+    }
+
+    async function deleteScanHistoryItem(scanId) {
+      if (!confirm(`Permanently delete assessment ${scanId}?`)) return;
+      const res = await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to delete scan: permission denied');
+        return;
+      }
+      await loadScanHistory();
+    }
+
+    function exportReport(format) {
+      if (!activeScanId) {
+        return alert('Please select or run an assessment before exporting.');
+      }
+      window.open(`/api/scans/${activeScanId}/export/${format}`, '_blank');
+    }
+
+    async function copyMarkdownReport() {
+      if (!activeScanId) {
+        return alert('Please select or run an assessment before copying.');
+      }
+      const copyBtnText = document.getElementById('copy-btn-text');
+      try {
+        const res = await fetch(`/api/scans/${activeScanId}/export/md`);
+        if (!res.ok) throw new Error('Failed to fetch Markdown report');
+        const text = await res.text();
+        await navigator.clipboard.writeText(text);
+        if (copyBtnText) copyBtnText.textContent = 'Copied!';
+        setTimeout(() => { if (copyBtnText) copyBtnText.textContent = 'Copy MD'; }, 2000);
+      } catch (err) {
+        console.error('Clipboard copy failed:', err);
+        alert('Failed to copy to clipboard. Downloading README.md instead.');
+        exportReport('md');
+      }
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
+      document.getElementById(tabId).classList.remove('hidden');
+
+      ['btn-tab-ports', 'btn-tab-vulns', 'btn-tab-attack-paths', 'btn-tab-terminal', 'btn-tab-history'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (id === `btn-${tabId}`) {
+          btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-pentrax-800 text-white flex items-center space-x-1.5 transition border border-pentrax-red/40';
+        } else {
+          btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1.5 transition border border-transparent';
+        }
+      });
+
+      if (tabId === 'tab-attack-paths') {
+        setTimeout(renderAttackGraph, 100);
+      }
+    }
+
+    function filterPortsTable() {
+      const query = document.getElementById('port-filter-input').value.toLowerCase();
+      const rows = document.querySelectorAll('#ports-table-body tr');
+      rows.forEach(r => {
+        r.style.display = r.innerText.toLowerCase().includes(query) ? '' : 'none';
+      });
+    }
+
+    function clearTerminalLogs() {
+      document.getElementById('terminal-container').innerHTML = '';
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>
