@@ -3650,6 +3650,7 @@ async def audit_web_dast(ip, port, timeout=2.0, hostname=None):
         "headers_missing": [],
         "cors_misconfigured": False,
         "sensitive_paths": [],
+        "discovered_routes": [],
     }
 
     is_tls = port in (443, 8443, 2083, 2087, 2096)
@@ -3856,6 +3857,35 @@ async def audit_web_dast(ip, port, timeout=2.0, hostname=None):
                         remediation_sla=v_sla,
                         category="DAST: SECRETS",
                     ))
+
+    # 4. Dynamic Target Discovery via robots.txt and sitemap.xml
+    robots_resp = await send_http_req("GET", "/robots.txt")
+    if robots_resp:
+        lines = robots_resp.split("\r\n")
+        status_match = re.search(r"HTTP/[\d.]+\s+(\d+)", lines[0]) if lines else None
+        if status_match and status_match.group(1) == "200":
+            dast_info["sensitive_paths"].append("/robots.txt")
+            body = robots_resp.split("\r\n\r\n", 1)[1] if "\r\n\r\n" in robots_resp else ""
+            for line in body.splitlines():
+                line = line.strip()
+                if line.lower().startswith(("disallow:", "allow:")):
+                    parts = line.split(":", 1)
+                    if len(parts) > 1:
+                        route = parts[1].strip()
+                        if route and route not in dast_info["discovered_routes"] and not route.startswith("*"):
+                            dast_info["discovered_routes"].append(route)
+
+    sitemap_resp = await send_http_req("GET", "/sitemap.xml")
+    if sitemap_resp:
+        lines = sitemap_resp.split("\r\n")
+        status_match = re.search(r"HTTP/[\d.]+\s+(\d+)", lines[0]) if lines else None
+        if status_match and status_match.group(1) == "200":
+            dast_info["sensitive_paths"].append("/sitemap.xml")
+            body = sitemap_resp.split("\r\n\r\n", 1)[1] if "\r\n\r\n" in sitemap_resp else ""
+            found_locs = re.findall(r"<loc>(https?://[^<]+)</loc>", body, re.IGNORECASE)
+            for loc in found_locs[:30]:
+                if loc not in dast_info["discovered_routes"]:
+                    dast_info["discovered_routes"].append(loc)
 
     return vulns, dast_info
 
@@ -4310,9 +4340,18 @@ def export_json(data, path):
     with open(path, "w") as f:
         json.dump(data, f, indent=2, default=str)
 
+def sanitize_csv_cell(value):
+    """Sanitize a cell value to prevent CSV Formula Injection / DDE attacks in Excel/Sheets."""
+    if value is None:
+        return ""
+    s = str(value)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
 def export_csv(data, path):
-    """Export results to CSV."""
-    with open(path, "w", newline="") as f:
+    """Export results to CSV with formula injection defense."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["ip","mac","port","protocol","state","service","version","os_hint",
                      "risk_level","cvss_score","cves","vulnerabilities","cis_id","cis_title"])
@@ -4326,10 +4365,23 @@ def export_csv(data, path):
                 if e.get("cves"):
                     cvss_score = str(e["cves"][0].get("cvss_score", ""))
                 
-                w.writerow([ip, info.get("mac",""), e["port"], e.get("protocol","tcp"),
-                            e.get("state","open"), e.get("service",""), e.get("version",""),
-                            e.get("os_hint",""), e.get("risk_level",""), cvss_score,
-                            cves, vulns, cis.id, cis.title])
+                row = [
+                    sanitize_csv_cell(ip),
+                    sanitize_csv_cell(info.get("mac","")),
+                    sanitize_csv_cell(e["port"]),
+                    sanitize_csv_cell(e.get("protocol","tcp")),
+                    sanitize_csv_cell(e.get("state","open")),
+                    sanitize_csv_cell(e.get("service","")),
+                    sanitize_csv_cell(e.get("version","")),
+                    sanitize_csv_cell(e.get("os_hint","")),
+                    sanitize_csv_cell(e.get("risk_level","")),
+                    sanitize_csv_cell(cvss_score),
+                    sanitize_csv_cell(cves),
+                    sanitize_csv_cell(vulns),
+                    sanitize_csv_cell(cis.id),
+                    sanitize_csv_cell(cis.title)
+                ]
+                w.writerow(row)
 
 def export_html(data, path):
     """Export results to HTML report.
@@ -4669,8 +4721,11 @@ async def amain(args, event_callback=None):
         if not checkpoint_state:
             print(f"  {C.R}Failed to load checkpoint. Starting fresh scan.{C.E}")
 
-    # Parse target (with hostname resolution)
-    hosts = parse_target(args.target)
+    # Parse target (with hostname resolution or pinned target_ips)
+    if getattr(args, "target_ips", None):
+        hosts = [str(ipaddress.ip_address(ip)) for ip in args.target_ips]
+    else:
+        hosts = parse_target(args.target)
     if not hosts:
         print(f"{C.R}[✗] No valid targets.{C.E}")
         return

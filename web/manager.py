@@ -123,7 +123,12 @@ class ScanManager:
 
     def __init__(self):
         self.scans: Dict[str, ScanInstance] = {}
+        self._scan_lock = asyncio.Lock()
         self._load_persisted_scans()
+
+    def is_busy(self) -> bool:
+        """Check if another scan is currently running."""
+        return self._scan_lock.locked() or any(s.status == "running" for s in self.scans.values())
 
     def _load_persisted_scans(self):
         """Load past scans from the scans/ directory."""
@@ -292,6 +297,7 @@ class ScanManager:
             verify=bool(config.get("verify", True)),
             dast=bool(config.get("dast", True)),
             ssl_audit=bool(config.get("ssl_audit", True)),
+            target_ips=config.get("pinned_ips") or None,
         )
 
         async def event_callback(ev: Dict[str, Any]):
@@ -350,9 +356,10 @@ class ScanManager:
             elif ev_type == "log":
                 instance.add_log(ev.get("text", ""))
 
-        # Redirect stdout/stderr capture or pipe into logs
+        # Execute scan with concurrency mutex protection
         try:
-            export_result = await ys.amain(args, event_callback=event_callback)
+            async with self._scan_lock:
+                export_result = await ys.amain(args, event_callback=event_callback)
             instance.result = export_result or instance.result
             instance.status = "completed"
             instance.duration_seconds = round(time.time() - start_time, 2)

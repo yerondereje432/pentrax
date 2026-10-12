@@ -12,11 +12,39 @@ from typing import Dict, Any
 
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, HTMLResponse, FileResponse, Response
 from starlette.routing import Route, WebSocketRoute, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
+
+class APIKeyAuthMiddleware(BaseHTTPMiddleware):
+    """Enforces API Key verification if PENTRAX_API_KEY environment variable is set."""
+    async def dispatch(self, request, call_next):
+        required_key = os.environ.get("PENTRAX_API_KEY")
+        # If no key configured in environment, keep open for local usage
+        if not required_key:
+            return await call_next(request)
+
+        # Allow index and static assets without authentication
+        path = request.url.path
+        if path == "/" or path.startswith("/static"):
+            return await call_next(request)
+
+        # Allow websocket connections to authenticate via query param or header
+        provided_key = request.headers.get("X-API-Key")
+        if not provided_key:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                provided_key = auth_header[7:].strip()
+        if not provided_key:
+            provided_key = request.query_params.get("api_key")
+
+        if provided_key != required_key:
+            return JSONResponse({"error": "Unauthorized: Invalid or missing PENTRAX_API_KEY"}, status_code=401)
+
+        return await call_next(request)
 
 # Ensure ROOT_DIR in sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -79,6 +107,10 @@ async def start_scan(request):
     if not target:
         return JSONResponse({"error": "Target IP, CIDR, or hostname is required"}, status_code=400)
 
+    # Concurrency gate: enforce single active scan to prevent module-level race conditions
+    if scan_manager.is_busy():
+        return JSONResponse({"error": "Another scan is currently in progress. Please wait for it to complete or stop it first."}, status_code=409)
+
     # Validate target using yerscan.parse_target
     resolved_hosts = ys.parse_target(target)
     if not resolved_hosts:
@@ -88,9 +120,10 @@ async def start_scan(request):
     if any(ys.is_cloud_metadata_ip(h) for h in resolved_hosts):
         return JSONResponse({"error": "Scanning cloud metadata endpoints (169.254.169.254) is forbidden (SSRF protection)."}, status_code=400)
 
-    # Build scan config
+    # Build scan config with pinned IPs to prevent DNS rebinding TOCTOU
     config = {
         "target": target,
+        "pinned_ips": resolved_hosts,
         "ports": body.get("ports", "top100"),
         "scan_type": body.get("scan_type", "syn" if ys.IS_ROOT else "connect"),
         "timing": body.get("timing", "T3"),
@@ -276,7 +309,8 @@ middleware = [
         allow_origins=["*"],
         allow_methods=["*"],
         allow_headers=["*"],
-    )
+    ),
+    Middleware(APIKeyAuthMiddleware),
 ]
 
 app = Starlette(routes=routes, middleware=middleware)
