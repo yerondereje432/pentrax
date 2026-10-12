@@ -1,0 +1,20 @@
+{
+  "target": "10.141.177.154",
+  "scan_time": "2026-10-12T09:48:03.139000",
+  "duration_seconds": 0.08,
+  "scan_type": "connect",
+  "ports_scanned": 50,
+  "port_range": "21-5985",
+  "total_checks": 50,
+  "hosts_alive": 1,
+  "hosts_with_ports": 0,
+  "total_open_ports": 0,
+  "filtered": 0,
+  "closed": 0,
+  "udp_ports": 0,
+  "deep_probed": 0,
+  "risky_services": 0,
+  "cves_found": 0,
+  "vulns_found": 0,
+  "results": {}
+}

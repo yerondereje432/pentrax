@@ -38,6 +38,7 @@ IMPLEMENTED FEATURES (v8.0 changelog):
 # ═══════════════════════════════════════════════════════════════════
 
 import asyncio
+import errno
 import socket
 import ssl
 import sys
@@ -45,6 +46,7 @@ import argparse
 import time
 import json
 import csv
+import html
 import ipaddress
 import os
 import signal
@@ -72,6 +74,14 @@ from enum import Enum
 IS_ROOT = os.geteuid() == 0 if hasattr(os, 'geteuid') else False
 IS_LINUX = platform.system() == "Linux"
 IS_WINDOWS = platform.system() == "Windows"
+
+# Keep the CLI usable on Windows consoles and redirected output streams.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
 
 # File descriptor limit
 if resource is not None:
@@ -2065,15 +2075,14 @@ def check_scope(target_str, authorized=False):
             print(f"\n {C.R}{C.BOLD}⚠ SCOPE WARNING: Target includes public IPs!{C.E}")
             print(f" {C.Y} Scanning public IPs without authorization may be illegal.{C.E}")
             print(f" {C.Y} Use --authorize to confirm you have permission.{C.E}\n")
-
-        try:
-            resp = input(f" {C.BOLD}Do you have authorization to scan this target? [y/N]: {C.E}").strip().lower()
-            if resp != "y":
-                print(f" {C.R}Scan aborted — no authorization.{C.E}")
-                log_audit("warning", "Scan aborted — no authorization", target=target_str)
+            try:
+                resp = input(f" {C.BOLD}Do you have authorization to scan this target? [y/N]: {C.E}").strip().lower()
+                if resp != "y":
+                    print(f" {C.R}Scan aborted — no authorization.{C.E}")
+                    log_audit("warning", "Scan aborted — no authorization", target=target_str)
+                    return False
+            except (EOFError, KeyboardInterrupt):
                 return False
-        except:
-            return False
 
         log_audit("info", "Scope check passed", target=target_str, authorized=authorized or not has_public)
         return True
@@ -2693,8 +2702,12 @@ async def adaptive_delay():
 def icmp_ping(ip, timeout=1):
     """ICMP echo request."""
     try:
+        if IS_WINDOWS:
+            ping_args = ["ping", "-n", "1", "-w", str(max(1, int(timeout * 1000))), str(ip)]
+        else:
+            ping_args = ["ping", "-c", "1", "-W", str(timeout), str(ip)]
         result = subprocess.run(
-        ["ping", "-c", "1", "-W", str(timeout), str(ip)],
+        ping_args,
         capture_output=True, timeout=timeout+1
         )
         return result.returncode == 0
@@ -2779,51 +2792,80 @@ async def host_discovery_icmp(hosts, timeout, concurrency):
             return live
 
 async def host_discovery_tcp(hosts, timeout, concurrency):
-    """TCP connect discovery."""
+    """Discover hosts by attempting TCP connections to common service ports.
+
+    A successful connection and a connection refusal both prove that the host
+    is reachable.  A timeout only means that this particular port did not
+    answer, so continue with the remaining probe ports before declaring the
+    host not alive.
+    """
     sem = asyncio.Semaphore(concurrency)
     probe_ports = [80, 443, 22, 445, 3389, 8080, 3306, 5432]
 
     async def bounded(ip):
         async with sem:
             if stop_flag: return None
+            loop = asyncio.get_event_loop()
+            socket_permission_blocked = False
             for port in probe_ports:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.setblocking(False)
-                    loop = asyncio.get_event_loop()
                     await asyncio.wait_for(
-                    loop.sock_connect(sock, (str(ip), port)),
-                    timeout=timeout
+                        loop.sock_connect(sock, (str(ip), port)),
+                        timeout=timeout
                     )
-                    sock.close()
                     return str(ip)
-                except:
+                except (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError):
+                    # The remote TCP stack answered, so the host is alive
+                    # even though this particular port is not open.
+                    return str(ip)
+                except TimeoutError:
+                    # This port may be filtered.  Give the other probe ports
+                    # a chance before deciding that the host is down.
+                    continue
+                except OSError as exc:
+                    # Windows can surface Winsock errors as a plain OSError.
+                    # ECONNREFUSED/10061 is still positive liveness evidence.
+                    if exc.errno in (getattr(errno, "ECONNREFUSED", 111), 10061):
+                        return str(ip)
+                    if isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 5:
+                        socket_permission_blocked = True
+                    continue
+                finally:
                     try: sock.close()
                     except: pass
-                    return None
 
-                tasks = [asyncio.create_task(bounded(ip)) for ip in hosts]
-                live = []
-                done = 0
+            # Some Windows network/security configurations prevent asyncio's
+            # TCP connect from reaching the gateway and return WinError 5 for
+            # every port.  Confirm reachability with ICMP in that case.
+            if socket_permission_blocked and await async_icmp_ping(ip, timeout):
+                return str(ip)
 
-            for coro in asyncio.as_completed(tasks):
-                done += 1
-                r = await coro
-                if r:
-                    live.append(r)
-                    alive_hosts.add(r)
-                    stats["hosts_alive"] += 1
-                    print(f" {C.G}●{C.E} {C.BOLD}{r}{C.E} is alive (TCP)")
+            return None
 
-                if done % 100 == 0:
-                    sys.stdout.write(f"\r {C.D}Probed {done}/{len(hosts)} hosts...{C.E}")
-                    sys.stdout.flush()
+    tasks = [asyncio.create_task(bounded(ip)) for ip in hosts]
+    live = []
+    done = 0
 
-                if done >= 100:
-                    sys.stdout.write("\r" + " " * 80 + "\r")
-                    sys.stdout.flush()
+    for coro in asyncio.as_completed(tasks):
+        done += 1
+        r = await coro
+        if r:
+            live.append(r)
+            alive_hosts.add(r)
+            stats["hosts_alive"] += 1
+            print(f" {C.G}●{C.E} {C.BOLD}{r}{C.E} is alive (TCP)")
 
-                return live
+        if done % 100 == 0:
+            sys.stdout.write(f"\r {C.D}Probed {done}/{len(hosts)} hosts...{C.E}")
+            sys.stdout.flush()
+
+        if done >= 100:
+            sys.stdout.write("\r" + " " * 80 + "\r")
+            sys.stdout.flush()
+
+    return live
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 16: PORT SCANNER (with all scan types dispatched)
@@ -2979,9 +3021,9 @@ async def port_scan_advanced(live_hosts, tcp_ports, udp_ports, timeout, concurre
             ))
             open_ports.append((ip, port, proto))
 
-        proto_color = C.CY if proto == "tcp" else C.M
-        print(f"\n {C.G}●{C.E} {C.BOLD}{ip}:{port}{C.E}/{proto_color}{proto}{C.E} "
-        f"{C.CY}{svc(port)}{C.E} {C.D}[{state}]{C.E}")
+            proto_color = C.CY if proto == "tcp" else C.M
+            print(f"\n {C.G}●{C.E} {C.BOLD}{ip}:{port}{C.E}/{proto_color}{proto}{C.E} "
+            f"{C.CY}{svc(port)}{C.E} {C.D}[{state}]{C.E}")
 
     reporter.cancel()
     try:
@@ -3683,6 +3725,9 @@ async def run_deep_intel(live_hosts, timeout, concurrency):
 class PluginManager:
     """Plugin/script management system."""
 
+    def __init__(self):
+        self.init()
+
     def init(self):
         self.plugins = []
         self.hooks = {
@@ -4174,14 +4219,14 @@ def parse_ports(spec, top_n):
     if top_n > 0:
         pool = sorted(set(TOP_PORTS))
         return pool[:top_n]
-        if spec.lower() == "all":
-            return list(range(1, 65536))
-            if "," in spec:
-                return sorted(set(int(p.strip()) for p in spec.split(",")))
-                if "-" in spec:
-                    a, b = spec.split("-", 1)
-                    return list(range(int(a), int(b) + 1))
-                    return [int(spec)]
+    if spec.lower() == "all":
+        return list(range(1, 65536))
+    if "," in spec:
+        return sorted(set(int(p.strip()) for p in spec.split(",")))
+    if "-" in spec:
+        a, b = spec.split("-", 1)
+        return list(range(int(a), int(b) + 1))
+    return [int(spec)]
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 28: MAIN SCAN ORCHESTRATOR
@@ -4189,6 +4234,11 @@ def parse_ports(spec, top_n):
 
 async def amain(args):
     """Main scan orchestrator."""
+    return await _run_scan(args)
+
+
+async def _legacy_amain(args):
+    """Deprecated copy of the pre-fix orchestrator kept below for reference."""
     global stop_flag
 
     # Apply timing template
@@ -4641,6 +4691,281 @@ async def amain(args):
                                     print()
 
 # ═══════════════════════════════════════════════════════════════════
+def _export_html_report(data, path):
+    """Write a compact HTML report for all scan outcomes, including empty scans."""
+    rows = []
+    for ip, info in sorted(data["results"].items(), key=lambda item: ipaddress.ip_address(item[0])):
+        for entry in info["ports"]:
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(ip)}</td>"
+                f"<td>{entry.get('port', '')}</td>"
+                f"<td>{html.escape(str(entry.get('protocol', 'tcp')))}</td>"
+                f"<td>{html.escape(str(entry.get('state', '')))}</td>"
+                f"<td>{html.escape(str(entry.get('service', '')))}</td>"
+                f"<td>{html.escape(str(entry.get('version', '')))}</td>"
+                f"<td>{html.escape(str(info.get('risk_level', 'LOW')))}</td>"
+                "</tr>"
+            )
+    document = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Yerscan Report</title>
+<style>body{{font-family:Segoe UI,sans-serif;background:#101820;color:#eee;padding:24px}}
+table{{border-collapse:collapse;width:100%}}th,td{{padding:8px;border:1px solid #39434d;text-align:left}}
+th{{color:#4dd0e1}}</style></head><body>
+<h1>Yerscan v{VERSION} Report</h1>
+<p>Target: <b>{html.escape(str(data['target']))}</b> · Duration: {data['duration_seconds']}s</p>
+<p>Hosts alive: {data['hosts_alive']} · Open ports: {data['total_open_ports']}</p>
+<table><thead><tr><th>Host</th><th>Port</th><th>Protocol</th><th>State</th>
+<th>Service</th><th>Version</th><th>Risk</th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table></body></html>"""
+    with open(path, "w", encoding="utf-8") as report:
+        report.write(document)
+
+
+async def _run_scan(args):
+    """Run one scan after CLI mode selection has completed."""
+    global stop_flag, results, alive_hosts, progress, stats
+
+    stop_flag = False
+    results.clear()
+    alive_hosts.clear()
+    progress.update({"done": 0, "total": 0, "found": 0, "errors": 0,
+                     "filtered": 0, "closed": 0})
+    stats.update({"deep_probes": 0, "vulns_found": 0, "services_fp": 0,
+                  "hosts_scanned": 0, "hosts_alive": 0, "udp_ports": 0,
+                  "cves": 0, "risky_services": 0})
+
+    if args.timing:
+        template = TIMING_TEMPLATES.get(args.timing, TIMING_TEMPLATES["T3"])
+        args.timeout = template["timeout"]
+        args.concurrency = template["concurrency"]
+        if template["delay"] > 0:
+            args.evasive = True
+            args.max_delay = template["delay"]
+
+    if args.config:
+        config = load_config(args.config)
+        if config:
+            apply_config(config, args)
+
+    if args.save_profile:
+        save_config(args.save_profile, args)
+        return
+
+    if args.log:
+        setup_logging(args.log)
+        log_audit("info", "Scan started", target=args.target)
+
+    if args.script:
+        for script_path in args.script.split(","):
+            script_path = script_path.strip()
+            if script_path:
+                plugin_manager.load_plugin(script_path)
+
+    checkpoint_state = load_checkpoint(args.resume) if args.resume else None
+    if checkpoint_state and not args.target:
+        args.target = checkpoint_state.target
+    hosts = parse_target(args.target)
+    if not hosts:
+        print(f"{C.R}[✗] No valid targets.{C.E}")
+        return
+    if not check_scope(args.target, authorized=args.authorize):
+        return
+
+    if len(hosts) > 10000:
+        print(f"\n {C.Y}{C.BOLD}⚠ WARNING: Large network ({len(hosts):,} hosts){C.E}")
+        if not args.yes:
+            try:
+                if input(f" {C.BOLD}Continue? [y/N]: {C.E}").strip().lower() != "y":
+                    return
+            except (EOFError, KeyboardInterrupt):
+                return
+
+    if args.exclude:
+        excluded = set()
+        for item in args.exclude.split(","):
+            excluded.update(parse_target(item.strip()))
+        hosts = [host for host in hosts if host not in excluded]
+
+    if checkpoint_state:
+        completed = set(checkpoint_state.completed_hosts)
+        hosts = [host for host in hosts if host not in completed]
+        print(f" {C.D}Skipping {len(completed)} already-scanned hosts{C.E}")
+
+    tcp_ports = [p for p in parse_ports(args.ports, args.top) if 1 <= p <= 65535]
+    udp_ports = UDP_PORTS if args.udp else []
+    if not tcp_ports and not udp_ports:
+        print(f"{C.R}[✗] No valid ports.{C.E}")
+        return
+
+    if args.shuffle:
+        random.shuffle(tcp_ports)
+        random.shuffle(udp_ports)
+
+    scan_type = ScanType(args.scan_type)
+    if scan_type != ScanType.CONNECT and not IS_ROOT:
+        print(f" {C.Y}[!] {scan_type.value.upper()} scan requires root. Falling back to connect scan.{C.E}")
+        scan_type = ScanType.CONNECT
+
+    decoys = None
+    if args.decoy:
+        decoys = []
+        for item in args.decoy.split(","):
+            item = item.strip()
+            if item == "RND":
+                decoys.append(".".join(str(random.randint(1, 254)) for _ in range(4)))
+            else:
+                decoys.extend(parse_target(item))
+
+    mtu = getattr(args, "mtu", 0)
+    total_hosts = len(hosts)
+    total_checks = total_hosts * (len(tcp_ports) + len(udp_ports))
+    port_desc = (f"{min(tcp_ports)}-{max(tcp_ports)}" if len(tcp_ports) > 1
+                 else (str(tcp_ports[0]) if tcp_ports else "UDP only"))
+
+    print(f" {C.BOLD}Target:{C.E} {C.W}{args.target}{C.E}")
+    print(f" {C.BOLD}Hosts:{C.E} {C.W}{total_hosts:,}{C.E}")
+    print(f" {C.BOLD}TCP Ports:{C.E} {C.W}{len(tcp_ports):,}{C.E} ({port_desc})")
+    if udp_ports:
+        print(f" {C.BOLD}UDP Ports:{C.E} {C.W}{len(udp_ports):,}{C.E}")
+    print(f" {C.BOLD}Scan Type:{C.E} {C.W}{scan_type.value.upper()}{C.E}")
+    print(f" {C.BOLD}Concurrency:{C.E} {C.W}{args.concurrency:,} sockets{C.E}")
+    print(f" {C.BOLD}Timeout:{C.E} {C.W}{args.timeout}s{C.E}")
+    if args.timing:
+        template = TIMING_TEMPLATES.get(args.timing, TIMING_TEMPLATES["T3"])
+        print(f" {C.BOLD}Timing:{C.E} {C.W}{args.timing} ({template['name']}){C.E}")
+    if args.evasive:
+        print(f" {C.BOLD}Evasion:{C.E} {C.W}ENABLED (delays: 0-{args.max_delay}s){C.E}")
+    print(f" {C.BOLD}Discovery:{C.E} {C.W}{'ICMP ping sweep' if args.icmp else 'TCP connect'}{C.E}")
+    print(f" {C.BOLD}Deep Intel:{C.E} {C.W}{'ENABLED' if args.deep else 'DISABLED'}{C.E}")
+    print(f" {C.BOLD}Total checks:{C.E} {C.W}{total_checks:,}{C.E}")
+    print(f" {C.BOLD}Started:{C.E} {C.W}{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{C.E}")
+    print(f"\n {'═' * 72}")
+
+    plugin_manager.run_hook("pre_scan", target=args.target, hosts=hosts, ports=tcp_ports)
+    start_time = time.time()
+
+    if args.icmp:
+        print(f"\n {C.BOLD}{C.CY}[PHASE 1/5] HOST DISCOVERY — ICMP Ping Sweep{C.E} ({total_hosts:,} hosts)\n")
+        live = await host_discovery_icmp(hosts, timeout=2.0, concurrency=min(args.concurrency, 500))
+    else:
+        print(f"\n {C.BOLD}{C.CY}[PHASE 1/5] HOST DISCOVERY — TCP Connect{C.E} ({total_hosts:,} hosts)\n")
+        live = await host_discovery_tcp(hosts, timeout=args.timeout, concurrency=min(args.concurrency, 500))
+
+    stats["hosts_scanned"] = len(live)
+    print(f"\n {C.G}{C.BOLD}✓ Found {len(live)} live host(s){C.E}")
+
+    evasion = {"max_delay": args.max_delay} if args.evasive else {}
+    if live and not stop_flag:
+        print(f"\n {C.BOLD}{C.CY}[PHASE 2/5] PORT SCAN ({scan_type.value.upper()}){C.E} "
+              f"({len(live)} hosts × {len(tcp_ports) + len(udp_ports):,} ports = "
+              f"{len(live) * (len(tcp_ports) + len(udp_ports)):,} checks)\n")
+        await port_scan_advanced(live, tcp_ports, udp_ports, args.timeout,
+                                 args.concurrency, scan_type, evasion, decoys, mtu)
+
+    print(f"\n {C.G}{C.BOLD}✓ Found {progress['found']} open port(s) on {len(results)} host(s){C.E}")
+    print(f" {C.D} {progress['filtered']} filtered, {progress['closed']} closed{C.E}")
+
+    if args.checkpoint:
+        save_checkpoint(args.checkpoint, args.target, scan_type.value, tcp_ports,
+                        list(results.keys()), [host for host in live if host not in results])
+
+    if results and not args.no_banner:
+        probe_count = sum(len(entries) for entries in results.values())
+        print(f"\n {C.BOLD}{C.CY}[PHASE 3/5] VERSION DETECTION & CVE MATCHING{C.E} ({probe_count} services)\n")
+        await version_detection(list(results.keys()), timeout=3.0,
+                                concurrency=min(args.concurrency, 500))
+        print(f" {C.G}{C.BOLD}✓ Detected versions for {stats['services_fp']} services{C.E}")
+
+    if args.deep and results:
+        deep_count = sum(len(entries) for entries in results.values())
+        print(f"\n {C.BOLD}{C.CY}[PHASE 4/5] DEEP INTEL — Service Enumeration{C.E} ({deep_count} services)\n")
+        await run_deep_intel(list(results.keys()), timeout=5.0,
+                             concurrency=min(args.concurrency, 100))
+        print(f" {C.G}{C.BOLD}✓ Deep probed {stats['deep_probes']} services{C.E}")
+
+    verifications = {}
+    if args.verify and results:
+        print(f"\n {C.BOLD}{C.CY}[PHASE 5/5] VULNERABILITY VERIFICATION — Safe PoC Checks{C.E}\n")
+        for ip in results:
+            verified = await verify_host_vulnerabilities(ip, results[ip], timeout=5.0)
+            if verified:
+                verifications[ip] = verified
+
+    print(f"\n {C.BOLD}{C.CY}[PHASE {'6/6' if args.verify else '5/5'}] RISK ANALYSIS & OS FINGERPRINTING{C.E}\n")
+    host_info = {}
+    for ip, entries in results.items():
+        score, level, vulns = compute_host_risk(entries)
+        host_info[ip] = {"mac": get_mac(ip) if not args.no_mac else "",
+                         "risk_score": score, "risk_level": level, "vulns": vulns}
+    print(f" {C.G}{C.BOLD}✓ Risk analysis complete{C.E}")
+
+    elapsed = time.time() - start_time
+    plugin_manager.run_hook("post_scan", results=results, host_info=host_info)
+    total_open = sum(len(entries) for entries in results.values())
+    print(f"\n {'═' * 72}")
+    print(f" {C.BOLD}{C.G} ✓ SCAN COMPLETE{C.E}")
+    print(f" {'═' * 72}")
+    print(f" {C.BOLD}Duration:{C.E} {C.W}{elapsed:.1f}s{C.E}")
+    print(f" {C.BOLD}Hosts alive:{C.E} {C.G}{len(live)}{C.E}")
+    print(f" {C.BOLD}Hosts w/ports:{C.E} {C.G}{len(results)}{C.E}")
+    print(f" {C.BOLD}Open ports:{C.E} {C.G}{total_open}{C.E} ({stats['udp_ports']} UDP)")
+    print(f" {C.BOLD}Filtered:{C.E} {C.Y}{progress['filtered']}{C.E}")
+    print(f" {C.BOLD}Closed:{C.E} {C.D}{progress['closed']}{C.E}")
+    print(f" {C.BOLD}Errors:{C.E} {C.Y}{progress['errors']}{C.E}")
+
+    if results:
+        print(f"\n {C.BOLD}{C.CY}RESULTS BY HOST{C.E}")
+        for ip in sorted(results, key=ipaddress.ip_address):
+            info = host_info[ip]
+            print(f" {risk_color(info['risk_level'])}{C.BOLD}▸ {ip}{C.E} "
+                  f"[{info['risk_level']} {info['risk_score']}pts] {len(results[ip])} open")
+            for entry in sorted(results[ip], key=lambda item: item.port):
+                print(f" {C.Y}{entry.port:>5}{C.E}/{entry.protocol:<3} "
+                      f"{entry.state:<14} {C.CY}{entry.service:<15}{C.E}")
+    else:
+        print(f"\n {C.R}No open ports found on any host.{C.E}")
+
+    base = args.output or f"yerscan_{args.target.replace('/', '')}{datetime.now():%Y%m%d_%H%M%S}"
+    export_data = {
+        "target": args.target, "scan_time": datetime.now().isoformat(),
+        "duration_seconds": round(elapsed, 2), "scan_type": scan_type.value,
+        "ports_scanned": len(tcp_ports) + len(udp_ports), "port_range": port_desc,
+        "total_checks": progress["done"], "hosts_alive": len(live),
+        "hosts_with_ports": len(results), "total_open_ports": total_open,
+        "filtered": progress["filtered"], "closed": progress["closed"],
+        "udp_ports": stats["udp_ports"], "deep_probed": stats["deep_probes"],
+        "risky_services": stats["risky_services"], "cves_found": stats["cves"],
+        "vulns_found": stats["vulns_found"], "results": {},
+    }
+    for ip, info in host_info.items():
+        export_data["results"][ip] = {
+            "mac": info["mac"], "risk_score": info["risk_score"],
+            "risk_level": info["risk_level"],
+            "vulns": [asdict(v) if isinstance(v, Vulnerability) else str(v) for v in info["vulns"]],
+            "ports": [asdict(entry) for entry in results[ip]],
+        }
+
+    files_written = []
+    exporters = [("json", export_json, f"{base}.json"),
+                 ("csv", export_csv, f"{base}.csv"),
+                 ("html", _export_html_report, f"{base}.html")]
+    for fmt, exporter, path in exporters:
+        if args.format in (fmt, "all"):
+            try:
+                exporter(export_data, path)
+                files_written.append(path)
+            except Exception as exc:
+                print(f" {C.Y}[!] {fmt.upper()} export error: {exc}{C.E}")
+    if files_written:
+        print(f" {C.BOLD}Reports saved:{C.E}")
+        for path in files_written:
+            print(f" • {C.W}{path}{C.E}")
+    log_audit("info", "Scan completed", duration=f"{elapsed:.1f}s",
+              hosts_alive=len(live), open_ports=total_open,
+              vulns=stats["vulns_found"])
+
+
 # SECTION 29: CLI ARGUMENT PARSER
 # ═══════════════════════════════════════════════════════════════════
 
@@ -4752,10 +5077,10 @@ def main():
         sys.exit(0 if success else 1)
 
     # Require target for normal scans
-    if not args.target and not args.save_profile:
-        parser.error("target is required (or use --self-test)")
+    if not args.target and not args.save_profile and not args.resume and not args.config:
+        parser.error("target is required (or use --self-test, --resume, --save-profile, or --config)")
 
-    # Apply presets
+    # Apply presets. These options are mutually exclusive by precedence.
     if args.quick:
         args.top = 50
         args.concurrency = 8000
@@ -4774,31 +5099,32 @@ def main():
         args.deep = True
         if IS_ROOT and not args.decoy:
             args.decoy = "RND,RND,RND"
-            if IS_ROOT and not args.mtu:
-                args.mtu = 24
-            elif args.thorough:
-                args.ports = "all"
-                args.concurrency = 3000
-                args.timeout = 2.0
-                args.deep = True
-                args.udp = True
-            elif args.full:
-                args.ports = "all"
-                args.concurrency = 5000
-                args.timeout = 1.5
-                args.deep = True
-                args.udp = True
-                args.icmp = True
-            elif args.vuln:
-                args.deep = True
-                args.concurrency = 3000
-                args.timeout = 2.0
+        if IS_ROOT and not args.mtu:
+            args.mtu = 24
+    elif args.thorough:
+        args.ports = "all"
+        args.concurrency = 3000
+        args.timeout = 2.0
+        args.deep = True
+        args.udp = True
+    elif args.full:
+        args.ports = "all"
+        args.concurrency = 5000
+        args.timeout = 1.5
+        args.deep = True
+        args.udp = True
+        args.icmp = True
+    elif args.vuln:
+        args.deep = True
+        args.concurrency = 3000
+        args.timeout = 2.0
 
-            print_banner()
-            try:
-                asyncio.run(amain(args))
-            except KeyboardInterrupt:
-                print(f"\n {C.R}Aborted.{C.E}\n")
+    # All non-self-test modes dispatch here after presets are applied.
+    print_banner()
+    try:
+        asyncio.run(amain(args))
+    except KeyboardInterrupt:
+        print(f"\n {C.R}Aborted.{C.E}\n")
 
 if __name__ == "__main__":
     main()
