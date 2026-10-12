@@ -201,6 +201,21 @@ class TestCVEMatching(unittest.TestCase):
         self.assertEqual(ys.parse_version("9.2p1"), (9, 2, 0, 1))
         self.assertEqual(ys.parse_version("2.4.52"), (2, 4, 52, 0))
 
+    def test_backport_detection_and_sla(self):
+        # Plain vulnerable version without distribution markers
+        plain_cves = ys.check_cve("OpenSSH_7.4p1", "SSH")
+        self.assertTrue(len(plain_cves) > 0)
+        self.assertFalse(plain_cves[0]["is_backport"])
+        self.assertEqual(plain_cves[0]["severity"], "MEDIUM")
+        self.assertEqual(plain_cves[0]["remediation_sla"], "30 Days")
+
+        # Debian backported version with +deb9u7
+        backport_cves = ys.check_cve("OpenSSH_7.4p1-10+deb9u7", "SSH")
+        self.assertTrue(len(backport_cves) > 0)
+        self.assertTrue(backport_cves[0]["is_backport"])
+        self.assertLess(backport_cves[0]["confidence"], 0.5)
+        self.assertIn("backport", backport_cves[0]["description"].lower())
+
 
 # ═══════════════════════════════════════════════════════════════════
 #  Bug 6: SMB check must not claim verification
@@ -310,6 +325,14 @@ class TestScopeGate(unittest.TestCase):
     def test_no_hosts_aborts(self):
         with self._quiet():
             self.assertFalse(ys.check_scope("nothing", hosts=[]))
+
+    def test_cloud_metadata_ssrf_blocked(self):
+        with self._quiet():
+            # Even if authorized=True, cloud metadata endpoints must always fail closed
+            self.assertFalse(ys.check_scope("169.254.169.254", authorized=True, hosts=["169.254.169.254"]))
+            self.assertTrue(ys.is_cloud_metadata_ip("169.254.169.254"))
+            self.assertTrue(ys.is_cloud_metadata_ip("fd00:ec2::254"))
+            self.assertFalse(ys.is_cloud_metadata_ip("192.168.1.1"))
 
 
 # ═══════════════════════════════════════════════════════════════════

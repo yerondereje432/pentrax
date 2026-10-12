@@ -204,6 +204,19 @@ class Vulnerability:
     evidence: str = ""
     remediation: str = ""
     references: List[str] = field(default_factory=list)
+    remediation_sla: str = ""  # e.g. "48 Hours", "14 Days", "30 Days", "90 Days"
+    category: str = ""  # e.g. "DAST", "SSL/TLS", "CVE", "MISCONFIG"
+
+    def __post_init__(self):
+        if not self.remediation_sla:
+            sla_map = {
+                "CRITICAL": "48 Hours",
+                "HIGH": "14 Days",
+                "MEDIUM": "30 Days",
+                "LOW": "90 Days",
+                "INFO": "90 Days",
+            }
+            self.remediation_sla = sla_map.get((self.risk_level or "").upper(), "30 Days")
 
 @dataclass
 class PortResult:
@@ -821,14 +834,33 @@ def check_cve(banner, service):
             if not affected:
                 continue
             cvss = entry["cvss"].calculate()
+            raw_banner = banner or ""
+            is_backport = bool(re.search(r"(\+deb\d+|ubuntu\d*|\.el\d+|_el\d+|debian)", raw_banner, re.I))
+            confidence = entry.get("confidence", 0.9)
+            if is_backport:
+                confidence = min(confidence, 0.4)
+                desc = entry["description"] + " (Notice: Linux distribution backport package detected; vendor may have backported security patches)"
+            else:
+                desc = entry["description"]
+
+            sla_map = {
+                "CRITICAL": "48 Hours",
+                "HIGH": "14 Days",
+                "MEDIUM": "30 Days",
+                "LOW": "90 Days",
+            }
+            remediation_sla = sla_map.get(cvss.severity, "30 Days")
+
             vulns.append({
                 "cve": entry["cve"],
                 "severity": cvss.severity,
-                "description": entry["description"],
+                "description": desc,
                 "cvss_score": cvss.base_score,
                 "cvss_vector": cvss.vector,
                 "matched_version": version,
-                "confidence": entry.get("confidence", 0.9),
+                "confidence": confidence,
+                "remediation_sla": remediation_sla,
+                "is_backport": is_backport,
             })
     return vulns
 
@@ -2078,21 +2110,68 @@ rate_state = {
     "min_delay": 0.0,
 }
 
+_EVENT_CALLBACK = None
+
+def set_event_callback(cb):
+    global _EVENT_CALLBACK
+    _EVENT_CALLBACK = cb
+
+async def emit_event(event_type: str, data: dict = None):
+    global _EVENT_CALLBACK
+    if _EVENT_CALLBACK:
+        payload = {"type": event_type, "timestamp": time.time(), **(data or {})}
+        try:
+            if asyncio.iscoroutinefunction(_EVENT_CALLBACK):
+                await _EVENT_CALLBACK(payload)
+            else:
+                _EVENT_CALLBACK(payload)
+        except Exception:
+            pass
+
+def reset_scan_state():
+    global stop_flag
+    results.clear()
+    alive_hosts.clear()
+    stop_flag = False
+    progress.update({"done": 0, "total": 0, "found": 0, "errors": 0, "filtered": 0, "closed": 0})
+    stats.update({
+        "deep_probes": 0, "vulns_found": 0, "services_fp": 0,
+        "hosts_scanned": 0, "hosts_alive": 0, "udp_ports": 0, "cves": 0,
+        "risky_services": 0,
+    })
+
 def signal_handler(sig, frame):
     global stop_flag
     stop_flag = True
     print(f"\n\n{C.R}{C.BOLD}[!] Interrupt received — saving checkpoint...{C.E}\n")
     log_audit("warning", "Scan interrupted by user")
 
-signal.signal(signal.SIGINT, signal_handler)
+try:
+    signal.signal(signal.SIGINT, signal_handler)
+except (ValueError, AttributeError):
+    pass
 
 # ═══════════════════════════════════════════════════════════════════
 #  SECTION 10: SCOPE & AUTHORIZATION GATE
 # ═══════════════════════════════════════════════════════════════════
 
+def is_cloud_metadata_ip(ip_str):
+    """Check if IP is a cloud instance metadata endpoint (SSRF protection)."""
+    try:
+        ip = ipaddress.ip_address(str(ip_str).strip())
+        if ip == ipaddress.ip_address("169.254.169.254"):
+            return True
+        if ip.version == 6 and str(ip).lower() in ("fd00:ec2::254", "::ffff:169.254.169.254"):
+            return True
+        return False
+    except:
+        return False
+
 def is_private_ip(ip_str):
     """Check if IP is in private/reserved range."""
     try:
+        if is_cloud_metadata_ip(ip_str):
+            return False  # Cloud metadata IP is never treated as safe private target
         ip = ipaddress.ip_address(ip_str)
         return ip.is_private or ip.is_loopback or ip.is_link_local
     except:
@@ -2103,6 +2182,7 @@ def check_scope(target_str, authorized=False, hosts=None, allow_networks=None):
 
     - Every resolved host is checked (not a sample of the first few).
     - If allow_networks is given, every host must fall inside one of them.
+    - Cloud metadata IPs (169.254.169.254, fd00:ec2::254) are forbidden (SSRF defense).
     - Public hosts need --authorize, or an interactive "y" answer.
     - Any unexpected error aborts the scan.
     """
@@ -2110,6 +2190,15 @@ def check_scope(target_str, authorized=False, hosts=None, allow_networks=None):
         if not hosts:
             print(f"  {C.R}Scope check: no resolved hosts for {target_str}.{C.E}")
             log_audit("warning", "Scope check failed — no hosts", target=target_str)
+            return False
+
+        # SSRF defense: block cloud metadata targets
+        metadata_targets = [h for h in hosts if is_cloud_metadata_ip(h)]
+        if metadata_targets:
+            print(f"  {C.R}{C.BOLD}🚨 SSRF DEFENSE: Target includes cloud metadata IP "
+                  f"({metadata_targets[0]}). Scanning cloud metadata endpoints is prohibited.{C.E}")
+            log_audit("warning", "Scan aborted — cloud metadata SSRF attempt",
+                      target=target_str, metadata_ip=metadata_targets[0])
             return False
 
         if allow_networks:
@@ -2891,6 +2980,16 @@ async def port_scan_advanced(live_hosts, tcp_ports, udp_ports, timeout, concurre
                 f"{C.Y}{rate:,.0f}/s{C.E}  "
                 f"ETA {C.W}{int(eta//60)}m{int(eta%60):02d}s{C.E}{delay_str}   ")
             sys.stdout.flush()
+            await emit_event("progress", {
+                "done": progress["done"],
+                "total": progress["total"],
+                "percent": round(pct, 1),
+                "found": progress["found"],
+                "filtered": progress["filtered"],
+                "closed": progress["closed"],
+                "rate": round(rate, 1),
+                "eta_seconds": int(eta)
+            })
 
     reporter = asyncio.create_task(progress_reporter())
     open_ports = []
@@ -2908,6 +3007,13 @@ async def port_scan_advanced(live_hosts, tcp_ports, udp_ports, timeout, concurre
                 window_size=window_size,
             ))
             open_ports.append((ip, port, proto))
+            await emit_event("port_found", {
+                "ip": str(ip),
+                "port": port,
+                "protocol": proto,
+                "state": state,
+                "service": svc(port)
+            })
             
             proto_color = C.CY if proto == "tcp" else C.M
             print(f"\n  {C.G}●{C.E} {C.BOLD}{ip}:{port}{C.E}/{proto_color}{proto}{C.E} "
@@ -3097,6 +3203,8 @@ async def version_detection(live_hosts, timeout, concurrency):
                     vuln.cvss.base_score = cve.get("cvss_score", 0)
                     vuln.cvss.vector = cve.get("cvss_vector", "")
                     vuln.cvss.severity = cve["severity"]
+                    vuln.remediation_sla = cve.get("remediation_sla", "30 Days")
+                    vuln.category = "CVE"
                     
                     entry.vulns.append(vuln)
                     stats["cves"] += 1
@@ -3535,6 +3643,349 @@ async def deep_ftp(ip, port, timeout):
     
     return info
 
+async def audit_web_dast(ip, port, timeout=2.0, hostname=None):
+    """Perform Web DAST assessment: Security headers, CORS misconfigs, sensitive path fuzzing."""
+    vulns = []
+    dast_info = {
+        "headers_missing": [],
+        "cors_misconfigured": False,
+        "sensitive_paths": [],
+    }
+
+    is_tls = port in (443, 8443, 2083, 2087, 2096)
+    host_hdr = hostname if hostname else (f"[{ip}]" if ":" in ip else ip)
+    if (is_tls and port != 443) or (not is_tls and port != 80):
+        host_hdr = f"{host_hdr}:{port}"
+
+    async def send_http_req(method, path, headers=None, body=""):
+        req_headers = {
+            "Host": host_hdr,
+            "User-Agent": "Mozilla/5.0 (compatible; PENTRAX/8.0; +https://pentrax.sec)",
+            "Accept": "*/*",
+            "Connection": "close",
+        }
+        if headers:
+            req_headers.update(headers)
+
+        req_lines = [f"{method} {path} HTTP/1.1"]
+        for k, v in req_headers.items():
+            req_lines.append(f"{k}: {v}")
+        req_lines.append("\r\n")
+        req_payload = "\r\n".join(req_lines).encode("utf-8")
+        if body:
+            req_payload += body.encode("utf-8")
+
+        ssl_ctx = None
+        if is_tls:
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+
+        try:
+            r, w = await asyncio.wait_for(
+                asyncio.open_connection(ip, port, ssl=ssl_ctx),
+                timeout=timeout
+            )
+            w.write(req_payload)
+            await w.drain()
+            raw_resp = await asyncio.wait_for(r.read(65536), timeout=timeout)
+            w.close()
+            try: await w.wait_closed()
+            except: pass
+            return raw_resp.decode("utf-8", errors="ignore")
+        except:
+            return ""
+
+    # 1. Base Request: Security Headers Audit
+    base_resp = await send_http_req("GET", "/")
+    if base_resp and ("HTTP/1." in base_resp or "HTTP/2" in base_resp):
+        header_part = base_resp.split("\r\n\r\n", 1)[0]
+        header_lines = header_part.split("\r\n")[1:]
+        headers_lower = {}
+        for line in header_lines:
+            if ":" in line:
+                k, v = line.split(":", 1)
+                headers_lower[k.strip().lower()] = v.strip()
+
+        missing_headers = []
+        if "content-security-policy" not in headers_lower:
+            missing_headers.append("Content-Security-Policy")
+            vulns.append(Vulnerability(
+                id="DAST-CSP-MISSING",
+                title="Missing Content-Security-Policy (CSP) Header",
+                description="The web server does not enforce a Content-Security-Policy, allowing potential execution of unauthorized scripts and Cross-Site Scripting (XSS).",
+                risk_level="MEDIUM",
+                affected_service=f"HTTP{'S' if is_tls else ''}",
+                affected_port=port,
+                evidence="HTTP response header Content-Security-Policy is absent",
+                remediation="Configure a restrictive Content-Security-Policy header (e.g., default-src 'self').",
+                remediation_sla="30 Days",
+                category="DAST: HEADERS",
+            ))
+
+        if is_tls and "strict-transport-security" not in headers_lower:
+            missing_headers.append("Strict-Transport-Security")
+            vulns.append(Vulnerability(
+                id="DAST-HSTS-MISSING",
+                title="Missing HTTP Strict-Transport-Security (HSTS) Header",
+                description="HTTPS is active but the server does not enforce HSTS, leaving users vulnerable to SSL-stripping and man-in-the-middle downgrade attacks.",
+                risk_level="MEDIUM",
+                affected_service="HTTPS",
+                affected_port=port,
+                evidence="HTTP response header Strict-Transport-Security is absent",
+                remediation="Enable HSTS: add 'Strict-Transport-Security: max-age=31536000; includeSubDomains'.",
+                remediation_sla="30 Days",
+                category="DAST: HEADERS",
+            ))
+
+        if "x-frame-options" not in headers_lower and "content-security-policy" not in headers_lower:
+            missing_headers.append("X-Frame-Options")
+            vulns.append(Vulnerability(
+                id="DAST-XFRAME-MISSING",
+                title="Missing Anti-Clickjacking Header (X-Frame-Options)",
+                description="The application does not specify X-Frame-Options, enabling malicious sites to render this page inside an iframe to perform clickjacking attacks.",
+                risk_level="LOW",
+                affected_service=f"HTTP{'S' if is_tls else ''}",
+                affected_port=port,
+                evidence="HTTP response header X-Frame-Options is absent",
+                remediation="Set 'X-Frame-Options: DENY' or 'X-Frame-Options: SAMEORIGIN'.",
+                remediation_sla="90 Days",
+                category="DAST: HEADERS",
+            ))
+
+        if "x-content-type-options" not in headers_lower:
+            missing_headers.append("X-Content-Type-Options")
+            vulns.append(Vulnerability(
+                id="DAST-XCTO-MISSING",
+                title="Missing MIME Sniffing Protection (X-Content-Type-Options)",
+                description="The application does not set X-Content-Type-Options: nosniff, allowing legacy browsers to incorrectly infer MIME types.",
+                risk_level="LOW",
+                affected_service=f"HTTP{'S' if is_tls else ''}",
+                affected_port=port,
+                evidence="HTTP response header X-Content-Type-Options is absent",
+                remediation="Set 'X-Content-Type-Options: nosniff'.",
+                remediation_sla="90 Days",
+                category="DAST: HEADERS",
+            ))
+
+        dast_info["headers_missing"] = missing_headers
+
+    # 2. CORS Misconfiguration Audit
+    cors_resp = await send_http_req("GET", "/", headers={"Origin": "https://pentrax-attacker-audit.com"})
+    if cors_resp:
+        cors_headers = cors_resp.split("\r\n\r\n", 1)[0].lower()
+        has_wildcard = "access-control-allow-origin: *" in cors_headers
+        has_reflected = "access-control-allow-origin: https://pentrax-attacker-audit.com" in cors_headers
+        has_creds = "access-control-allow-credentials: true" in cors_headers
+
+        if has_reflected and has_creds:
+            dast_info["cors_misconfigured"] = True
+            vulns.append(Vulnerability(
+                id="DAST-CORS-REFLECTED-CREDS",
+                title="Critical CORS Misconfiguration: Arbitrary Origin Reflection with Credentials",
+                description="The server dynamically reflects untrusted request Origin headers while allowing Access-Control-Allow-Credentials: true. An attacker site can steal authenticated user sessions and cookies.",
+                risk_level="CRITICAL",
+                affected_service=f"HTTP{'S' if is_tls else ''}",
+                affected_port=port,
+                evidence="Origin https://pentrax-attacker-audit.com reflected with Access-Control-Allow-Credentials: true",
+                remediation="Only whitelist trusted origin domains and avoid dynamic origin reflection when credentials are enabled.",
+                remediation_sla="48 Hours",
+                category="DAST: CORS",
+            ))
+        elif has_reflected:
+            dast_info["cors_misconfigured"] = True
+            vulns.append(Vulnerability(
+                id="DAST-CORS-REFLECTED",
+                title="CORS Misconfiguration: Arbitrary Origin Reflected",
+                description="The server reflects arbitrary origins in Access-Control-Allow-Origin, permitting unauthorized cross-origin data access.",
+                risk_level="MEDIUM",
+                affected_service=f"HTTP{'S' if is_tls else ''}",
+                affected_port=port,
+                evidence="Origin https://pentrax-attacker-audit.com reflected in Access-Control-Allow-Origin",
+                remediation="Specify explicit allowed origins rather than reflecting request Origin headers.",
+                remediation_sla="30 Days",
+                category="DAST: CORS",
+            ))
+        elif has_wildcard:
+            dast_info["cors_misconfigured"] = True
+            vulns.append(Vulnerability(
+                id="DAST-CORS-WILDCARD",
+                title="Permissive CORS Policy (Wildcard Access-Control-Allow-Origin)",
+                description="The web service exposes Access-Control-Allow-Origin: * to any web origin.",
+                risk_level="LOW",
+                affected_service=f"HTTP{'S' if is_tls else ''}",
+                affected_port=port,
+                evidence="Access-Control-Allow-Origin: * present",
+                remediation="Restrict Access-Control-Allow-Origin to trusted application domains if internal data is returned.",
+                remediation_sla="90 Days",
+                category="DAST: CORS",
+            ))
+
+    # 3. High-Value Sensitive Path & Secret Fuzzing
+    sensitive_targets = [
+        ("/.env", re.compile(r"(DB_|SECRET_|PASSWORD|AWS_ACCESS_KEY|APP_KEY|DATABASE_URL)", re.I),
+         "DAST-EXPOSED-ENV", "Exposed .env Configuration File with Secrets", "CRITICAL", "48 Hours"),
+        ("/.git/config", re.compile(r"(\[core\]|repositoryformatversion)", re.I),
+         "DAST-EXPOSED-GIT", "Exposed .git Repository Configuration", "HIGH", "14 Days"),
+        ("/actuator/env", re.compile(r"(activeProfiles|propertySources)", re.I),
+         "DAST-SPRING-ACTUATOR", "Exposed Spring Boot Actuator Environment", "CRITICAL", "48 Hours"),
+        ("/swagger-ui.html", re.compile(r"(swagger|openapi)", re.I),
+         "DAST-EXPOSED-SWAGGER", "Publicly Accessible Swagger / OpenAPI Documentation", "LOW", "90 Days"),
+        ("/phpinfo.php", re.compile(r"(PHP Version|Configuration File)", re.I),
+         "DAST-EXPOSED-PHPINFO", "Exposed PHP Information Disclosure (phpinfo.php)", "MEDIUM", "30 Days"),
+    ]
+
+    for path, pattern, v_id, v_title, v_risk, v_sla in sensitive_targets:
+        resp = await send_http_req("GET", path)
+        if resp:
+            lines = resp.split("\r\n")
+            status_match = re.search(r"HTTP/[\d.]+\s+(\d+)", lines[0]) if lines else None
+            if status_match and status_match.group(1) == "200":
+                body = resp.split("\r\n\r\n", 1)[1] if "\r\n\r\n" in resp else ""
+                if pattern.search(body):
+                    dast_info["sensitive_paths"].append(path)
+                    vulns.append(Vulnerability(
+                        id=v_id,
+                        title=v_title,
+                        description=f"Public HTTP GET access to {path} returned HTTP 200 with signature match: {pattern.pattern}",
+                        risk_level=v_risk,
+                        affected_service=f"HTTP{'S' if is_tls else ''}",
+                        affected_port=port,
+                        evidence=f"GET {path} returned HTTP 200 OK with sensitive token match",
+                        remediation=f"Block public web access to {path} in web server rules or reverse proxy.",
+                        remediation_sla=v_sla,
+                        category="DAST: SECRETS",
+                    ))
+
+    return vulns, dast_info
+
+async def audit_tls_security(ip, port, timeout=2.5, hostname=None):
+    """Audit SSL/TLS cryptographic health, protocol deprecations, cert validity."""
+    vulns = []
+    tls_info = {
+        "protocol": None,
+        "cipher": None,
+        "cert_expired": False,
+        "self_signed": False,
+    }
+
+    server_name = hostname if hostname else ip
+
+    def _sync_tls_probe():
+        ctx_none = ssl.create_default_context()
+        ctx_none.check_hostname = False
+        ctx_none.verify_mode = ssl.CERT_NONE
+
+        sock = socket.socket(socket.AF_INET if ":" not in ip else socket.AF_INET6, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            sock.connect((ip, port))
+            sslobj = ctx_none.wrap_socket(sock, server_hostname=server_name)
+            version = sslobj.version()
+            cipher = sslobj.cipher()
+            der = sslobj.getpeercert(binary_form=True)
+            return {
+                "version": version,
+                "cipher": cipher,
+                "has_der": bool(der),
+                "error": None
+            }
+        except Exception as e:
+            return {"error": str(e)}
+        finally:
+            try: sock.close()
+            except: pass
+
+    try:
+        res = await asyncio.to_thread(_sync_tls_probe)
+    except:
+        return vulns, tls_info
+
+    if res.get("error"):
+        return vulns, tls_info
+
+    version = res.get("version")
+    tls_info["protocol"] = version
+    if res.get("cipher"):
+        tls_info["cipher"] = res["cipher"][0]
+
+    # Deprecated protocols check (TLS 1.0 / 1.1)
+    if version in ("TLSv1", "TLSv1.0", "TLSv1.1", "SSLv3", "SSLv2"):
+        vulns.append(Vulnerability(
+            id="TLS-DEPRECATED-PROTOCOL",
+            title=f"Deprecated Cryptographic Protocol Active ({version})",
+            description=f"The server negotiates connections using obsolete {version}. RFC 8996 formally deprecates TLS 1.0 and TLS 1.1 due to insecure cipher suites and lack of modern PFS.",
+            risk_level="HIGH",
+            affected_service="SSL/TLS",
+            affected_port=port,
+            evidence=f"Handshake negotiated protocol {version}",
+            remediation="Disable TLS 1.0 and TLS 1.1 on the server; enforce TLS 1.2 and TLS 1.3 only.",
+            remediation_sla="14 Days",
+            category="SSL/TLS",
+        ))
+
+    # Also verify CA trust with CERT_REQUIRED
+    def _sync_verify_probe():
+        ctx_verify = ssl.create_default_context()
+        ctx_verify.check_hostname = False
+        sock = socket.socket(socket.AF_INET if ":" not in ip else socket.AF_INET6, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            sock.connect((ip, port))
+            sslobj = ctx_verify.wrap_socket(sock, server_hostname=server_name)
+            cert = sslobj.getpeercert()
+            return {"trusted": True, "cert": cert}
+        except ssl.SSLCertVerificationError as e:
+            return {"trusted": False, "verify_error": str(e)}
+        except Exception:
+            return {"trusted": None}
+        finally:
+            try: sock.close()
+            except: pass
+
+    try:
+        v_res = await asyncio.to_thread(_sync_verify_probe)
+        if v_res.get("trusted") is False:
+            tls_info["self_signed"] = True
+            vulns.append(Vulnerability(
+                id="TLS-UNTRUSTED-OR-SELF-SIGNED",
+                title="Untrusted or Self-Signed SSL/TLS Certificate",
+                description="The server certificate failed root CA chain validation (self-signed or untrusted CA), leaving traffic vulnerable to Man-in-the-Middle (MITM) interception.",
+                risk_level="MEDIUM",
+                affected_service="SSL/TLS",
+                affected_port=port,
+                evidence=str(v_res.get("verify_error", "Certificate verification failed")),
+                remediation="Deploy an SSL/TLS certificate signed by a trusted public Certificate Authority (e.g., Let's Encrypt).",
+                remediation_sla="30 Days",
+                category="SSL/TLS",
+            ))
+        elif v_res.get("cert"):
+            cert = v_res["cert"]
+            not_after = cert.get("notAfter")
+            if not_after:
+                try:
+                    exp_date = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
+                    if exp_date < datetime.utcnow():
+                        tls_info["cert_expired"] = True
+                        vulns.append(Vulnerability(
+                            id="TLS-EXPIRED-CERT",
+                            title="Expired SSL/TLS Certificate",
+                            description=f"The certificate expired on {not_after}. Client connections will be rejected.",
+                            risk_level="CRITICAL",
+                            affected_service="SSL/TLS",
+                            affected_port=port,
+                            evidence=f"Certificate notAfter={not_after}",
+                            remediation="Renew and re-issue the SSL/TLS certificate immediately.",
+                            remediation_sla="48 Hours",
+                            category="SSL/TLS",
+                        ))
+                except:
+                    pass
+    except:
+        pass
+
+    return vulns, tls_info
+
 async def deep_enumerate(ip, port, service, timeout):
     """Route to appropriate deep scanner."""
     http_ports = {80, 8080, 8000, 8888, 8008, 8081, 8083, 8088, 8180, 9090}
@@ -3559,8 +4010,8 @@ async def deep_enumerate(ip, port, service, timeout):
     
     return {}
 
-async def run_deep_intel(live_hosts, timeout, concurrency):
-    """Run deep enumeration on all open ports."""
+async def run_deep_intel(live_hosts, timeout, concurrency, enable_dast=True, enable_ssl_audit=True):
+    """Run deep enumeration, Web DAST, and SSL/TLS audits on all open ports."""
     sem = asyncio.Semaphore(concurrency)
     tasks = []
     
@@ -3589,9 +4040,52 @@ async def run_deep_intel(live_hosts, timeout, concurrency):
                         affected_service=entry.service,
                         affected_port=entry.port,
                         evidence=str(deep_info),
+                        remediation_sla="14 Days",
+                        category="SERVICE",
                     )
                     entry.vulns.append(vuln)
                     stats["vulns_found"] += 1
+
+            # Web DAST Audit (CORS, Security Headers, Sensitive Paths)
+            http_ports = {80, 8080, 8000, 8888, 8008, 8081, 8083, 8088, 8180, 9090, 443, 8443}
+            if enable_dast and (entry.port in http_ports or "HTTP" in (entry.service or "").upper()):
+                dast_vulns, dast_data = await audit_web_dast(ip, entry.port, timeout=min(timeout, 2.5))
+                if dast_vulns:
+                    entry.vulns.extend(dast_vulns)
+                    stats["vulns_found"] += len(dast_vulns)
+                    for dv in dast_vulns:
+                        await emit_event("vulnerability_found", {
+                            "ip": ip,
+                            "port": entry.port,
+                            "title": dv.title,
+                            "severity": dv.risk_level,
+                            "remediation_sla": dv.remediation_sla,
+                            "category": dv.category,
+                            "description": dv.description,
+                        })
+                if isinstance(entry.deep, dict):
+                    entry.deep["dast"] = dast_data
+
+            # SSL/TLS Cryptographic Audit
+            ssl_ports = {443, 8443, 2083, 2087, 2096, 993, 995, 465, 636}
+            if enable_ssl_audit and (entry.port in ssl_ports or "HTTPS" in (entry.service or "").upper() or "SSL" in (entry.service or "").upper()):
+                tls_vulns, tls_data = await audit_tls_security(ip, entry.port, timeout=min(timeout, 2.5))
+                if tls_vulns:
+                    entry.vulns.extend(tls_vulns)
+                    stats["vulns_found"] += len(tls_vulns)
+                    for tv in tls_vulns:
+                        await emit_event("vulnerability_found", {
+                            "ip": ip,
+                            "port": entry.port,
+                            "title": tv.title,
+                            "severity": tv.risk_level,
+                            "remediation_sla": tv.remediation_sla,
+                            "category": tv.category,
+                            "description": tv.description,
+                        })
+                if isinstance(entry.deep, dict):
+                    entry.deep["tls"] = tls_data
+
             return ip, entry
     
     coros = [asyncio.create_task(bounded(ip, e)) for ip, e in tasks]
@@ -4129,9 +4623,12 @@ def parse_ports(spec, top_n):
 #  SECTION 28: MAIN SCAN ORCHESTRATOR
 # ═══════════════════════════════════════════════════════════════════
 
-async def amain(args):
+async def amain(args, event_callback=None):
     """Main scan orchestrator."""
-    global stop_flag
+    global stop_flag, _EVENT_CALLBACK
+    if event_callback is not None:
+        _EVENT_CALLBACK = event_callback
+    reset_scan_state()
 
     # Apply timing template
     if args.timing:
@@ -4291,8 +4788,21 @@ async def amain(args):
     plugin_manager.run_hook("pre_scan", target=args.target, hosts=hosts, ports=tcp_ports)
 
     start_time = time.time()
+    total_phases = 6 if args.verify else 5
+
+    await emit_event("scan_started", {
+        "target": args.target,
+        "total_hosts": total_hosts,
+        "total_ports": len(tcp_ports) + len(udp_ports),
+        "scan_type": scan_type.value,
+        "timeout": args.timeout,
+        "concurrency": args.concurrency,
+        "deep": bool(args.deep),
+        "verify": bool(args.verify)
+    })
 
     # ─── Phase 1: Host Discovery ───────────────────────────────
+    await emit_event("phase", {"phase": 1, "total_phases": total_phases, "name": "HOST DISCOVERY", "detail": f"Probing {total_hosts} hosts"})
     if args.icmp:
         print(f"\n  {C.BOLD}{C.CY}[PHASE 1/5] HOST DISCOVERY — ICMP Ping Sweep{C.E} ({total_hosts:,} hosts)\n")
         live = await host_discovery_icmp(hosts, timeout=2.0, concurrency=min(args.concurrency, 500))
@@ -4302,20 +4812,36 @@ async def amain(args):
     
     if not live:
         print(f"\n  {C.R}No live hosts found.{C.E}")
-        return
+        empty_res = {
+            "target": args.target,
+            "scan_time": datetime.now().isoformat(),
+            "duration_seconds": round(time.time() - start_time, 2),
+            "scan_type": scan_type.value,
+            "hosts_alive": 0,
+            "hosts_with_ports": 0,
+            "total_open_ports": 0,
+            "cves_found": 0,
+            "vulns_found": 0,
+            "results": {}
+        }
+        await emit_event("scan_completed", {"export_data": empty_res})
+        return empty_res
     
     print(f"\n  {C.G}{C.BOLD}✓ Found {len(live)} live host(s){C.E}")
     stats["hosts_scanned"] = len(live)
+    await emit_event("phase_complete", {"phase": 1, "live_hosts": live})
 
     if stop_flag:
-        return
+        return None
 
     # ─── Phase 2: Port Scan ────────────────────────────────────
+    await emit_event("phase", {"phase": 2, "total_phases": total_phases, "name": "PORT SCAN", "detail": f"Scanning {len(live)} host(s)"})
     print(f"\n  {C.BOLD}{C.CY}[PHASE 2/5] PORT SCAN ({scan_type.value.upper()}){C.E} "
           f"({len(live)} hosts × {len(tcp_ports) + len(udp_ports):,} ports = {len(live)*(len(tcp_ports) + len(udp_ports)):,} checks)\n")
     
     open_ports = await port_scan_advanced(live, tcp_ports, udp_ports, args.timeout, 
                                           args.concurrency, scan_type, evasion, decoys, mtu)
+    await emit_event("phase_complete", {"phase": 2, "open_ports": progress['found'], "filtered": progress['filtered'], "closed": progress['closed']})
 
     if results:
         print(f"\n  {C.G}{C.BOLD}✓ Found {progress['found']} open port(s) on {len(results)} host(s){C.E}")
@@ -4348,7 +4874,15 @@ async def amain(args):
         for ip in results.keys():
             plugin_manager.run_hook("per_host", ip=ip, ports=results[ip])
         
-        await run_deep_intel(list(results.keys()), timeout=5.0, concurrency=min(args.concurrency, 100))
+        enable_dast = getattr(args, "dast", True)
+        enable_ssl_audit = getattr(args, "ssl_audit", True)
+        await run_deep_intel(
+            list(results.keys()),
+            timeout=5.0,
+            concurrency=min(args.concurrency, 100),
+            enable_dast=enable_dast,
+            enable_ssl_audit=enable_ssl_audit,
+        )
         print(f"  {C.G}{C.BOLD}✓ Deep probed {stats['deep_probes']} services{C.E}")
         if stats['vulns_found'] > 0:
             print(f"  {C.R}{C.BOLD}⚠ Found {stats['vulns_found']} vulnerabilities!{C.E}")
@@ -4562,12 +5096,16 @@ async def amain(args):
     
     for ip in sorted(results.keys(), key=lambda x: ipaddress.ip_address(x)):
         info = host_info.get(ip, {"mac":"","risk_score":0,"risk_level":"LOW","vulns":[]})
+        os_hint = results[ip][0].os_hint if results[ip] else ""
+        host_paths, host_exploit_score = analyze_attack_paths(results[ip], os_hint, verifications.get(ip, {}))
         export_data["results"][ip] = {
             "mac": info["mac"],
             "risk_score": info["risk_score"],
             "risk_level": info["risk_level"],
             "vulns": [asdict(v) if isinstance(v, Vulnerability) else str(v) for v in info["vulns"]],
             "ports": [asdict(e) for e in results[ip]],
+            "attack_paths": host_paths,
+            "exploit_score": round(host_exploit_score, 1)
         }
 
     files_written = []
@@ -4595,6 +5133,8 @@ async def amain(args):
     log_audit("info", "Scan completed", duration=f"{elapsed:.1f}s", 
               hosts_alive=len(live), open_ports=total_open, vulns=stats["vulns_found"])
     print()
+    await emit_event("scan_completed", {"export_data": export_data})
+    return export_data
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -4631,6 +5171,14 @@ def main():
                         help="Skip MAC address resolution")
     parser.add_argument("--deep", action="store_true",
                         help="Enable deep intel (15+ service probes)")
+    parser.add_argument("--dast", action="store_true", default=True,
+                        help="Enable Web DAST audit (CORS, headers, sensitive paths)")
+    parser.add_argument("--no-dast", action="store_false", dest="dast",
+                        help="Disable Web DAST audit")
+    parser.add_argument("--ssl-audit", action="store_true", default=True,
+                        help="Enable SSL/TLS cryptographic audit")
+    parser.add_argument("--no-ssl-audit", action="store_false", dest="ssl_audit",
+                        help="Disable SSL/TLS cryptographic audit")
     parser.add_argument("--shuffle", action="store_true",
                         help="Randomize port order")
     parser.add_argument("--evasive", action="store_true",

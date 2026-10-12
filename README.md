@@ -1,16 +1,15 @@
-# ⚡ YERSCAN v8.0
-
-**Professional-Grade Network Security Scanner with Advanced Vulnerability Detection**
+# ⬡ PENTRAX v8.0
+### **WEB VULNERABILITY ASSESSMENT & SECURITY PLATFORM**
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Version](https://img.shields.io/badge/version-8.0-blue.svg)
+![Version](https://img.shields.io/badge/version-8.0-red.svg)
 
 ---
 
 ## 🎯 Overview
 
-Yerscan is a production-grade network security scanner that combines the power of nmap-style scanning with advanced vulnerability detection, attack path analysis, and MITRE ATT&CK mapping. Built with asyncio for blazing-fast performance, Yerscan can scan entire /24 networks in under 2 minutes.
+**PENTRAX** is a production-grade web vulnerability assessment and network security scanner that combines port scanning with automated service fingerprinting, CVE vulnerability matching, safe PoC verification, attack path analysis, and MITRE ATT&CK mapping. Built with an asynchronous engine and a real-time web operations dashboard.
 
 ---
 
@@ -78,7 +77,20 @@ chmod +x yerscan.py
 python3 yerscan.py --self-test
 ```
 
-### **Basic Usage**
+### **Web Console Quick Start (Graduation Edition)**
+
+Launch the full-featured, real-time web console with a single command:
+
+```bash
+# Start the web platform (default: http://127.0.0.1:8080)
+python3 run_server.py --host 127.0.0.1 --port 8080
+
+# Or launch with elevated privileges to unlock raw SYN/ACK/FIN scans:
+sudo python3 run_server.py --host 127.0.0.1 --port 8080
+```
+Open **`http://127.0.0.1:8080`** in your browser to access the SOC Security Operations Dashboard with live WebSockets, MITRE ATT&CK attack path topology graphs, and one-click report exports.
+
+### **CLI Basic Usage**
 
 ```bash
 # Quick scan (top 50 ports)

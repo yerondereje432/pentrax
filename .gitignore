@@ -1,2 +1,40 @@
+# Python bytecode & cache
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing, logs & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Scan assessment results & reports
+scans/*
+!scans/.gitkeep
+yerscan_*.json
+yerscan_*.csv
+yerscan_*.html
+pentrax_*.json
+pentrax_*.csv
+pentrax_*.html
+
+# IDEs & Editor configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System files
+.DS_Store
+Thumbs.db
