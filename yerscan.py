@@ -58,6 +58,8 @@ import html as _html
 import platform
 import logging
 import importlib.util
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # shared policy + storage modules
+from yerscan_store import ScanRecorder, default_data_dir  # noqa: E402
 from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
@@ -274,6 +276,26 @@ class C:
 # Audit logger
 audit_logger = logging.getLogger("yerscan.audit")
 audit_logger.setLevel(logging.DEBUG)
+
+# Structured progress events (JSON lines) and the dashboard database recorder.
+# emit_event() fans a single event out to both sinks. A terminal scan is recorded into the shared
+# database (so the web dashboard can show it live); a dashboard-started worker uses --events to write
+# its own JSON-lines stream instead, and passes --no-record so nothing is written twice.
+_EVENT_SINK = None
+_RECORDER = None
+
+
+def emit_event(event_type, **data):
+    """Send one progress event to --events FILE and/or the dashboard database. No-op otherwise."""
+    if _EVENT_SINK is None and _RECORDER is None:
+        return
+    if _EVENT_SINK is not None:
+        record = {"type": event_type, "ts": round(time.time(), 3), **data}
+        _EVENT_SINK.write(json.dumps(record, default=str) + "\n")
+        _EVENT_SINK.flush()
+    if _RECORDER is not None:
+        _RECORDER.event(event_type, data)
+
 
 def setup_logging(log_file=None):
     """Setup file-based audit logging."""
@@ -4131,7 +4153,10 @@ def parse_ports(spec, top_n):
 
 async def amain(args):
     """Main scan orchestrator."""
-    global stop_flag
+    global stop_flag, _EVENT_SINK, _RECORDER
+
+    if getattr(args, "events", None):
+        _EVENT_SINK = open(args.events, "a", encoding="utf-8", buffering=1)
 
     # Apply timing template
     if args.timing:
@@ -4211,6 +4236,16 @@ async def amain(args):
             e = e.strip()
             exclude.update(parse_target(e))
     hosts = [h for h in hosts if h not in exclude]
+
+    # Record this scan in the shared database so the web dashboard can show it live.
+    # Dashboard-started workers pass --events and --no-record, so nothing is recorded twice.
+    if not getattr(args, "no_record", False) and not getattr(args, "events", None):
+        try:
+            _RECORDER = ScanRecorder(default_data_dir() / "yerscan_web.sqlite3", args.target,
+                                     args.ports, args.verify, args.authorize)
+        except Exception as e:
+            _RECORDER = None
+            print(f"  {C.Y}[!] Not recorded for the dashboard: {e}{C.E}")
 
     # If resuming, skip completed hosts
     if checkpoint_state:
@@ -4307,6 +4342,10 @@ async def amain(args):
     print(f"\n  {C.G}{C.BOLD}✓ Found {len(live)} live host(s){C.E}")
     stats["hosts_scanned"] = len(live)
 
+    emit_event("phase", name="discovery", label="Host discovery", method=("icmp" if args.icmp else "tcp"))
+    for ip in live:
+        emit_event("host_found", ip=ip, method=("icmp" if args.icmp else "tcp"))
+
     if stop_flag:
         return
 
@@ -4323,6 +4362,12 @@ async def amain(args):
     else:
         print(f"\n  {C.Y}No open ports found.{C.E}")
 
+    emit_event("phase", name="port_scan", label="Port scan", scan_type=scan_type.value)
+    for ip, entries in results.items():
+        for e in entries:
+            if e.state == "open":
+                emit_event("port_open", ip=ip, port=e.port, protocol=e.protocol, state=e.state)
+
     # Save checkpoint
     if args.checkpoint:
         completed_hosts = list(results.keys())
@@ -4338,6 +4383,17 @@ async def amain(args):
         print(f"  {C.G}{C.BOLD}✓ Detected versions for {stats['services_fp']} services{C.E}")
         if stats['cves'] > 0:
             print(f"  {C.R}{C.BOLD}⚠ Found {stats['cves']} CVE matches!{C.E}")
+
+    emit_event("phase", name="version", label="Version detection & CVE matching")
+    for ip, entries in results.items():
+        for e in entries:
+            if e.service:
+                emit_event("service_identified", ip=ip, port=e.port,
+                           service=e.service, version=e.version or "")
+            for cve in (e.cves or []):
+                emit_event("cve_found", ip=ip, port=e.port, cve=cve.get("cve", ""),
+                           cvss_score=cve.get("cvss_score"), severity=cve.get("severity", ""),
+                           confidence=cve.get("confidence"))
 
     # ─── Phase 4: Deep Intel ───────────────────────────────────
     if args.deep and results:
@@ -4394,6 +4450,13 @@ async def amain(args):
         host_info[ip] = {"mac": mac, "risk_score": score, "risk_level": level, "vulns": vulns}
     
     print(f"  {C.G}{C.BOLD}✓ Risk analysis complete{C.E}")
+
+    emit_event("phase", name="risk", label="Risk analysis")
+    for ip in results.keys():
+        info = host_info.get(ip)
+        if info:
+            emit_event("risk_computed", ip=ip, risk_score=info["risk_score"],
+                       risk_level=info["risk_level"])
 
     elapsed = time.time() - start_time
 
@@ -4592,7 +4655,11 @@ async def amain(args):
         for p in files_written:
             print(f"    • {C.W}{p}{C.E}")
     
-    log_audit("info", "Scan completed", duration=f"{elapsed:.1f}s", 
+    emit_event("done", duration=round(elapsed, 2), hosts_alive=len(live),
+               hosts_with_ports=len(results), open_ports=total_open, vulns=stats["vulns_found"])
+    if _RECORDER is not None:
+        _RECORDER.finish("done", export_data["results"])
+    log_audit("info", "Scan completed", duration=f"{elapsed:.1f}s",
               hosts_alive=len(live), open_ports=total_open, vulns=stats["vulns_found"])
     print()
 
@@ -4667,6 +4734,10 @@ def main():
                         help="Write audit log to file")
     
     # Scope/authorization
+    parser.add_argument("--no-record", action="store_true",
+                        help="Do not record this scan in the dashboard database (default: record it)")
+    parser.add_argument("--events", default=None, metavar="FILE",
+                        help="Write structured progress events as JSON lines (used by the web dashboard)")
     parser.add_argument("--authorize", action="store_true",
                         help="Confirm authorization to scan target")
     parser.add_argument("--scope", default=None, metavar="FILE",
@@ -4758,6 +4829,15 @@ def main():
         asyncio.run(amain(args))
     except KeyboardInterrupt:
         print(f"\n  {C.R}Aborted.{C.E}\n")
+        if _RECORDER is not None:
+            _RECORDER.finish("cancelled", error="interrupted from the terminal")
+    except Exception as e:
+        if _RECORDER is not None:
+            _RECORDER.finish("failed", error=f"{type(e).__name__}: {e}")
+        raise
+    finally:
+        if _RECORDER is not None and not _RECORDER.finished:
+            _RECORDER.finish("failed", error="scan ended before completion")
 
 
 if __name__ == "__main__":

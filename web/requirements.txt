@@ -1,0 +1,5 @@
+# Web dashboard dependencies for yerscan.
+# Install with:  python3 -m venv .venv && ./.venv/bin/pip install -r web/requirements.txt
+fastapi>=0.100
+uvicorn[standard]>=0.20
+httpx>=0.24

@@ -478,6 +478,43 @@ Other:
 
 ---
 
+## 🌐 Web Dashboard (preview)
+
+A small FastAPI dashboard shows scans live. It can also start scans from the browser, using the same
+CLI worker. Both the dashboard and a plain terminal scan read/write one shared SQLite database, so a
+scan started in a terminal shows up in the dashboard in real time.
+
+```bash
+python3 -m venv .venv && ./.venv/bin/pip install -r web/requirements.txt
+export YERSCAN_WEB_PASSWORD="$(openssl rand -hex 8)-please-change"   # required, 12+ characters
+python3 -m web                 # serves http://127.0.0.1:8000
+```
+
+Then open <http://127.0.0.1:8000> and sign in with that password.
+
+- **Recording:** a plain `python3 yerscan.py ...` run is recorded in `data/yerscan_web.sqlite3`
+  (or `$YERSCAN_DATA_DIR/yerscan_web.sqlite3`), so with the dashboard running it shows up live in
+  the browser, marked **terminal**. Add `--no-record` to skip. The CLI output and report files are
+  unchanged. Dashboard-started scans are marked **dashboard** and are never recorded twice (the
+  worker runs with `--no-record`).
+- **Live progress:** each scan streams events over SSE (`/api/scans/{id}/events`) — phase
+  transitions, open ports, identified services, CVEs, and the final result. Host detail and a
+  new-scan form are also included.
+- **Auth:** the dashboard requires a password from `YERSCAN_WEB_PASSWORD` and refuses to start if it
+  is missing or under 12 characters. Sessions use an http-only cookie plus a CSRF token.
+- **Scope & limits:** the new-scan form enforces the same private/authorized rules as the CLI, plus
+  `YERSCAN_MAX_HOSTS` (default 1024), `YERSCAN_MAX_CONCURRENT` (default 2), and up to 1000 ports per
+  scan. Dashboard scans run as connect (TCP) scans only; raw scan types are not available from the UI.
+- **sudo:** when a terminal scan runs under `sudo`, the database files are handed back to the user who
+  ran sudo, so the dashboard (running as that user) can still read and write them.
+- **Iframe previews:** set `YERSCAN_ALLOW_EMBED=1` to permit embedding the dashboard in a frame
+  (otherwise `X-Frame-Options: DENY`).
+- **Binding:** the default bind address is `127.0.0.1`. Set `YERSCAN_WEB_HOST=0.0.0.0` only behind a
+  TLS-terminating proxy.
+- **Data:** the SQLite database and per-scan artifacts live under `data/` (git-ignored).
+
+---
+
 ## 🔒 Security Considerations
 
 ### **Authorization**
@@ -516,6 +553,12 @@ python3 -m unittest discover -s tests -v
 
 # Also run raw SYN/ACK/FIN/NULL/XMAS/WINDOW tests on loopback
 sudo python3 -m unittest discover -s tests -v
+
+# Web dashboard tests need the web dependencies installed in a venv:
+python3 -m venv .venv && ./.venv/bin/pip install -r web/requirements.txt
+./.venv/bin/python -m unittest discover -s tests -v
+# Run the same with sudo too (PYTHONDONTWRITEBYTECODE=1 avoids root-owned __pycache__):
+sudo PYTHONDONTWRITEBYTECODE=1 ./.venv/bin/python -m unittest discover -s tests -v
 ```
 
 ### **Known limitations**
