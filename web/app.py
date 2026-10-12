@@ -1,4 +1,4 @@
-"""Starlette Application and REST / WebSocket API for Yerscan Web."""
+"""Starlette Application and REST / WebSocket API for PENTRAX Web."""
 
 import asyncio
 import io
@@ -51,7 +51,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import yerscan as ys
+import pentrax as ys
 from web.manager import scan_manager, ScanInstance
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -62,7 +62,7 @@ async def index(request):
     """Serve the single-page Cyber SOC web interface."""
     index_file = STATIC_DIR / "index.html"
     if not index_file.exists():
-        return HTMLResponse("<h1>Yerscan Web UI under construction</h1>", status_code=200)
+        return HTMLResponse("<h1>PENTRAX Web UI under construction</h1>", status_code=200)
     with open(index_file, "r", encoding="utf-8") as f:
         content = f.read()
     return HTMLResponse(content)
@@ -111,7 +111,7 @@ async def start_scan(request):
     if scan_manager.is_busy():
         return JSONResponse({"error": "Another scan is currently in progress. Please wait for it to complete or stop it first."}, status_code=409)
 
-    # Validate target using yerscan.parse_target
+    # Validate target using pentrax.parse_target
     resolved_hosts = ys.parse_target(target)
     if not resolved_hosts:
         return JSONResponse({"error": f"Invalid target or host could not be resolved: '{target}'"}, status_code=400)

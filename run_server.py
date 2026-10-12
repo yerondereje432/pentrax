@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Yerscan Web Server Launcher.
+"""PENTRAX Web Server Launcher.
 
 Academic / Capstone Graduation Edition.
-Starts the Uvicorn ASGI server hosting the Yerscan Web Platform.
+Starts the Uvicorn ASGI server hosting the PENTRAX Web Platform.
 """
 
 import argparse
@@ -16,7 +16,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import yerscan as ys
+import pentrax as ys
 
 
 def print_banner(host: str, port: int):
@@ -49,7 +49,7 @@ def print_banner(host: str, port: int):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Yerscan Web-Based Vulnerability & Network Scanner Platform"
+        description="PENTRAX Web-Based Vulnerability & Network Scanner Platform"
     )
     parser.add_argument(
         "--host", default="127.0.0.1", help="Host interface to bind to (default: 127.0.0.1)"

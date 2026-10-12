@@ -134,7 +134,7 @@ Security practitioners and red-team operators utilize PENTRAX across every stage
 - **Workflow**:
   ```bash
   # Fast, unprivileged discovery across a target subnet
-  python3 yerscan.py target-domain.com -p top100 --fast
+  python3 pentrax.py target-domain.com -p top100 --fast
   ```
 - **Hacker Perspective**: By querying the top 100 ports using asynchronous TCP Connect scans, an auditor quickly establishes the active service footprint (web applications, reverse proxies, exposed databases) in seconds.
 
@@ -143,7 +143,7 @@ Security practitioners and red-team operators utilize PENTRAX across every stage
 - **Workflow**:
   ```bash
   # Stealth SYN scan with packet fragmentation, decoy IPs, and paranoid timing
-  sudo python3 yerscan.py 192.168.1.50 -s syn --mtu 24 --decoy RND,RND,192.168.1.1 --timing T1 --shuffle
+  sudo python3 pentrax.py 192.168.1.50 -s syn --mtu 24 --decoy RND,RND,192.168.1.1 --timing T1 --shuffle
   ```
 - **Hacker Perspective**:
   - `--mtu 24` fragments TCP packets into tiny 8-byte chunks, preventing naive signature firewalls from reconstructing the TCP header.
@@ -195,7 +195,7 @@ git clone https://github.com/yerondereje432/yerscan.git
 cd yerscan
 
 # Make launcher executable
-chmod +x run_server.py yerscan.py
+chmod +x run_server.py pentrax.py yerscan.py
 ```
 
 ---
@@ -229,13 +229,13 @@ sudo python3 run_server.py --host 127.0.0.1 --port 8080
 
 ```bash
 # Verify system readiness and run built-in diagnostics
-python3 yerscan.py --self-test
+python3 pentrax.py --self-test
 
 # Scan a single host (Top 100 ports, fast mode)
-python3 yerscan.py 127.0.0.1 --fast
+python3 pentrax.py 127.0.0.1 --fast
 
 # Deep audit of a web application with full reporting
-python3 yerscan.py target.com -p 80,443,8080,8443 --deep --format all
+python3 pentrax.py target.com -p 80,443,8080,8443 --deep --format all
 ```
 
 ---
@@ -280,20 +280,20 @@ PENTRAX automatically adapts its operational behavior depending on your operatin
 
 ```bash
 # Scan a CIDR block with HTML report export
-python3 yerscan.py 192.168.1.0/24 -p top50 -f html -o lab_report
+python3 pentrax.py 192.168.1.0/24 -p top50 -f html -o lab_report
 
 # Stealth scan with randomized decoys
-sudo python3 yerscan.py 10.0.0.5 -s syn --decoy RND,RND --evasive
+sudo python3 pentrax.py 10.0.0.5 -s syn --decoy RND,RND --evasive
 
 # Specific service scan excluding an administrative IP
-python3 yerscan.py 10.0.0.0/24 -p 22,80,443,3306 --exclude 10.0.0.1
+python3 pentrax.py 10.0.0.0/24 -p 22,80,443,3306 --exclude 10.0.0.1
 ```
 
 ---
 
 ## 🧪 Verification & Test Suite
 
-PENTRAX includes a comprehensive unit and integration test suite with **52 automated tests** covering core network engines, packet reassembly, DAST fuzzing, SSL handshake parsing, and SSRF defenses:
+PENTRAX includes a comprehensive unit and integration test suite with **57 automated tests** covering core network engines, packet reassembly, DAST fuzzing, SSL handshake parsing, and SSRF defenses:
 
 ```bash
 # Run complete test suite
@@ -302,15 +302,15 @@ python3 -m unittest discover -s tests -v
 
 ```text
 test_audit_web_dast_logic (test_web_api.TestWebAPI) ... ok
-test_cloud_metadata_ssrf_blocked (test_yerscan.TestScopeGate) ... ok
+test_cloud_metadata_ssrf_blocked (test_pentrax.TestScopeGate) ... ok
 test_start_scan_validation_fails_on_cloud_metadata_ip (test_web_api.TestWebAPI) ... ok
-test_backport_detection_and_sla (test_yerscan.TestCVEMatching) ... ok
+test_backport_detection_and_sla (test_pentrax.TestCVEMatching) ... ok
 test_vulnerability_sla_auto_assignment (test_web_api.TestWebAPI) ... ok
 test_export_scan_formats (test_web_api.TestWebAPI) ... ok
 test_websocket_sync (test_web_api.TestWebAPI) ... ok
 ...
 ----------------------------------------------------------------------
-Ran 52 tests in 0.719s
+Ran 57 tests in 0.739s
 
 OK (skipped=4)
 ```

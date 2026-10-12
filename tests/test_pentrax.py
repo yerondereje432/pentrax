@@ -1,4 +1,4 @@
-"""Regression tests for yerscan.py.
+"""Regression tests for pentrax.py.
 
 Run without privileges (raw-socket tests are skipped):
     python3 -m unittest discover -s tests -v
@@ -25,7 +25,7 @@ import unittest
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_spec = importlib.util.spec_from_file_location("yerscan", os.path.join(ROOT, "yerscan.py"))
+_spec = importlib.util.spec_from_file_location("pentrax", os.path.join(ROOT, "pentrax.py"))
 ys = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ys)
 
