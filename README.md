@@ -450,6 +450,8 @@ Advanced:
   --max-delay SECONDS       Maximum random delay
   --shuffle                 Shuffle port order
   --exclude IPS             Exclude IPs (comma-separated)
+  --scope FILE              Allowlist file (one CIDR/IP per line); targets outside it abort the scan
+  --authorize               Confirm authorization to scan public targets
 
 Output:
   -o, --output FILE         Output filename base
@@ -506,6 +508,21 @@ Contributions are welcome! Please:
 2. Create a feature branch
 3. Make your changes
 4. Submit a pull request
+
+### **Running the tests**
+```bash
+# No privileges needed (raw-socket tests are skipped)
+python3 -m unittest discover -s tests -v
+
+# Also run raw SYN/ACK/FIN/NULL/XMAS/WINDOW tests on loopback
+sudo python3 -m unittest discover -s tests -v
+```
+
+### **Known limitations**
+- Raw TCP scan types (SYN, ACK, FIN, NULL, XMAS, WINDOW) are IPv4-only. IPv6 targets use connect semantics.
+- Window scan: Linux answers open ports with RST and window 0, so it reports them as closed. It is most useful against stacks that report a non-zero window.
+- CVE matching uses a small curated table with version ranges. Banner matches are not confirmed vulnerabilities. MS17-010 is inferred from the OS name and is not verified.
+- Attack paths are marked `POTENTIAL` unless a verification probe or deep-probe finding confirms them.
 
 ### **Development Guidelines**
 - Follow PEP 8 style guide

@@ -54,6 +54,7 @@ import struct
 import subprocess
 import resource
 import hashlib
+import html as _html
 import platform
 import logging
 import importlib.util
@@ -131,34 +132,34 @@ class CVSSScore:
     availability: str = "N"  # None
     
     def calculate(self):
-        """Calculate CVSS base score from vector components."""
-        av_scores = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.20}
-        ac_scores = {"L": 0.77, "H": 0.44}
-        pr_scores_unchanged = {"N": 0.85, "L": 0.62, "H": 0.27}
-        pr_scores_changed = {"N": 0.85, "L": 0.68, "H": 0.50}
-        ui_scores = {"N": 0.85, "R": 0.62}
-        cia_scores = {"H": 0.56, "L": 0.22, "N": 0.0}
-        
-        av = av_scores.get(self.attack_vector, 0.85)
-        ac = ac_scores.get(self.attack_complexity, 0.77)
-        pr = (pr_scores_changed if self.scope == "C" else pr_scores_unchanged).get(self.privileges_required, 0.85)
-        ui = ui_scores.get(self.user_interaction, 0.85)
-        c = cia_scores.get(self.confidentiality, 0.0)
-        i = cia_scores.get(self.integrity, 0.0)
-        a = cia_scores.get(self.availability, 0.0)
-        
-        iss = 1 - ((1 - c) * (1 - i) * (1 - a))
-        
-        if iss <= 0:
-            self.base_score = 0.0
+        """Compute the CVSS v3.1 base score from the vector components (FIRST spec section 7.1)."""
+        av = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.20}.get(self.attack_vector, 0.85)
+        ac = {"L": 0.77, "H": 0.44}.get(self.attack_complexity, 0.77)
+        changed = self.scope == "C"
+        if changed:
+            pr = {"N": 0.85, "L": 0.68, "H": 0.50}.get(self.privileges_required, 0.85)
         else:
-            if self.scope == "U":
-                self.base_score = min(iss + av + ac + pr + ui, 10.0) * 0.6
-            else:
-                self.base_score = min(1.08 * (iss + av + ac + pr + ui), 10.0)
-        
-        self.base_score = round(self.base_score, 1)
-        
+            pr = {"N": 0.85, "L": 0.62, "H": 0.27}.get(self.privileges_required, 0.85)
+        ui = {"N": 0.85, "R": 0.62}.get(self.user_interaction, 0.85)
+        cia = {"H": 0.56, "L": 0.22, "N": 0.0}
+        c = cia.get(self.confidentiality, 0.0)
+        i = cia.get(self.integrity, 0.0)
+        a = cia.get(self.availability, 0.0)
+
+        iss = 1 - (1 - c) * (1 - i) * (1 - a)
+        if changed:
+            impact = 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15
+        else:
+            impact = 6.42 * iss
+        exploitability = 8.22 * av * ac * pr * ui
+
+        if impact <= 0:
+            self.base_score = 0.0
+        elif changed:
+            self.base_score = _roundup_cvss(min(1.08 * (impact + exploitability), 10.0))
+        else:
+            self.base_score = _roundup_cvss(min(impact + exploitability, 10.0))
+
         if self.base_score >= 9.0:
             self.severity = "CRITICAL"
         elif self.base_score >= 7.0:
@@ -169,9 +170,16 @@ class CVSSScore:
             self.severity = "LOW"
         else:
             self.severity = "NONE"
-        
+
         self.vector = f"CVSS:3.1/AV:{self.attack_vector}/AC:{self.attack_complexity}/PR:{self.privileges_required}/UI:{self.user_interaction}/S:{self.scope}/C:{self.confidentiality}/I:{self.integrity}/A:{self.availability}"
         return self
+
+def _roundup_cvss(x):
+    """CVSS v3.1 Roundup: smallest one-decimal value >= x, computed without float drift."""
+    i = round(x * 100000)
+    if i % 10000 == 0:
+        return i / 100000
+    return (i // 10000 + 1) / 10
 
 @dataclass
 class CISBenchmark:
@@ -683,112 +691,145 @@ def get_risk_info(port):
 #  SECTION 5: CVE DATABASE
 # ═══════════════════════════════════════════════════════════════════
 
+def parse_version(text):
+    """Parse '1.2.3p4' style text into a comparable (major, minor, patch, p-level) tuple."""
+    m = re.match(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:p(\d+))?", text or "")
+    if not m:
+        return (0, 0, 0, 0)
+    return tuple(int(g) if g else 0 for g in m.groups())
+
+# Each entry:
+#   product  - regex that finds the product in a banner; group 'ver' captures the version
+#   ranges   - list of (introduced, fixed) tuples; a version is affected when introduced <= v < fixed
+#              ranges=None marks a presence check inferred from the banner (lower confidence)
+#   confidence - how sure a banner match makes us (default 0.9)
+# Ranges are taken from the vendor advisories / NVD entries for each CVE.
 CVE_DB = {
     "openssh": [
         {
-            "pattern": r"OpenSSH_([0-7]\.[0-9]|8\.[0-5])",
-            "cve": "CVE-2021-28041",
-            "severity": "HIGH",
-            "description": "OpenSSH < 8.6 ssh-agent vulnerability",
-            "cvss": CVSSScore(attack_vector="L", attack_complexity="L", privileges_required="N",
-                            user_interaction="R", scope="U", confidentiality="H", integrity="N", availability="N"),
-        },
-        {
-            "pattern": r"OpenSSH_([0-7]\.[0-9]|8\.[0-9])",
-            "cve": "CVE-2023-38408",
-            "severity": "CRITICAL",
-            "description": "OpenSSH RCE via ssh-agent PKCS#11",
-            "cvss": CVSSScore(attack_vector="N", attack_complexity="L", privileges_required="N",
-                            user_interaction="R", scope="U", confidentiality="H", integrity="H", availability="H"),
-        },
-        {
-            "pattern": r"OpenSSH_([0-6]\.[0-9]|7\.[0-3])",
             "cve": "CVE-2018-15473",
-            "severity": "MEDIUM",
-            "description": "OpenSSH user enumeration via timing",
+            "product": r"OpenSSH_(?P<ver>\d+\.\d+(?:p\d+)?)",
+            "ranges": [((0, 0, 0, 0), (7, 8, 0, 0))],
+            "description": "OpenSSH user enumeration via timing (before 7.8)",
             "cvss": CVSSScore(attack_vector="N", attack_complexity="L", privileges_required="N",
-                            user_interaction="N", scope="U", confidentiality="L", integrity="N", availability="N"),
+                              user_interaction="N", scope="U", confidentiality="L", integrity="N", availability="N"),
+        },
+        {
+            "cve": "CVE-2021-28041",
+            "product": r"OpenSSH_(?P<ver>\d+\.\d+(?:p\d+)?)",
+            "ranges": [((0, 0, 0, 0), (8, 5, 0, 0))],
+            "description": "OpenSSH ssh-agent double free (before 8.5)",
+            "cvss": CVSSScore(attack_vector="L", attack_complexity="L", privileges_required="N",
+                              user_interaction="R", scope="U", confidentiality="H", integrity="N", availability="N"),
+        },
+        {
+            "cve": "CVE-2023-38408",
+            "product": r"OpenSSH_(?P<ver>\d+\.\d+(?:p\d+)?)",
+            "ranges": [((0, 0, 0, 0), (9, 3, 0, 2))],
+            "description": "OpenSSH ssh-agent PKCS#11 remote code execution (before 9.3p2)",
+            # NVD / vendor vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H (9.8)
+            "cvss": CVSSScore(attack_vector="N", attack_complexity="L", privileges_required="N",
+                              user_interaction="N", scope="U", confidentiality="H", integrity="H", availability="H"),
         },
     ],
     "apache": [
         {
-            "pattern": r"Apache/2\.4\.([0-9]|[1-4][0-9])",
             "cve": "CVE-2021-44790",
-            "severity": "CRITICAL",
-            "description": "Apache mod_lua buffer overflow",
+            "product": r"Apache/(?P<ver>2\.4\.\d+)",
+            "ranges": [((2, 4, 0, 0), (2, 4, 52, 0))],
+            "description": "Apache mod_lua multipart parser buffer overflow (2.4.0-2.4.51)",
             "cvss": CVSSScore(attack_vector="N", attack_complexity="L", privileges_required="N",
-                            user_interaction="N", scope="U", confidentiality="H", integrity="H", availability="H"),
+                              user_interaction="N", scope="U", confidentiality="H", integrity="H", availability="H"),
         },
         {
-            "pattern": r"Apache/2\.4\.4[0-9]",
             "cve": "CVE-2022-22720",
-            "severity": "MEDIUM",
-            "description": "Apache HTTP request smuggling",
+            "product": r"Apache/(?P<ver>2\.4\.\d+)",
+            "ranges": [((2, 4, 0, 0), (2, 4, 53, 0))],
+            "description": "Apache HTTP request smuggling (2.4.0-2.4.52)",
             "cvss": CVSSScore(attack_vector="N", attack_complexity="H", privileges_required="N",
-                            user_interaction="N", scope="U", confidentiality="L", integrity="L", availability="N"),
+                              user_interaction="N", scope="U", confidentiality="L", integrity="L", availability="N"),
         },
     ],
     "nginx": [
         {
-            "pattern": r"nginx/1\.([0-9]\.|1[0-7]\.)",
             "cve": "CVE-2021-23017",
-            "severity": "HIGH",
-            "description": "nginx off-by-one in resolver",
+            "product": r"nginx/(?P<ver>\d+\.\d+\.\d+)",
+            "ranges": [((0, 6, 18, 0), (1, 20, 1, 0))],
+            "description": "nginx resolver off-by-one (0.6.18-1.20.0)",
             "cvss": CVSSScore(attack_vector="N", attack_complexity="H", privileges_required="N",
-                            user_interaction="N", scope="U", confidentiality="N", integrity="N", availability="H"),
+                              user_interaction="N", scope="U", confidentiality="N", integrity="N", availability="H"),
         },
     ],
     "smb": [
         {
-            "pattern": r"Windows.*(?:2008|2012|7|8|Vista)",
+            # EternalBlue. Only old Windows product names are matched. Build numbers
+            # such as 17763 or 20348 are not matched, which avoids the earlier false positives.
             "cve": "MS17-010",
-            "severity": "CRITICAL",
-            "description": "EternalBlue SMB RCE",
+            "product": r"\bWindows\s+(?:Server\s+)?(?:2008|2012)\b|\bWindows\s+(?:XP|Vista|7|8(?:\.1)?)\b",
+            "ranges": None,
+            "confidence": 0.5,
+            "description": "EternalBlue SMBv1 RCE (MS17-010) - inferred from OS version, patch level not verified",
             "cvss": CVSSScore(attack_vector="N", attack_complexity="L", privileges_required="N",
-                            user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="H"),
+                              user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="H"),
         },
     ],
     "redis": [
         {
-            "pattern": r"redis_version:([0-5]\.[0-9]|6\.0\.[0-9])",
             "cve": "CVE-2021-32625",
-            "severity": "HIGH",
-            "description": "Redis integer overflow in WS bulk count",
+            "product": r"redis_version:(?P<ver>\d+\.\d+\.\d+)",
+            "ranges": [((6, 0, 0, 0), (6, 0, 14, 0)), ((6, 2, 0, 0), (6, 2, 4, 0))],
+            "description": "Redis STRALGO LCS integer overflow (6.0.0-6.0.13, 6.2.0-6.2.3)",
             "cvss": CVSSScore(attack_vector="N", attack_complexity="H", privileges_required="L",
-                            user_interaction="N", scope="U", confidentiality="N", integrity="N", availability="H"),
+                              user_interaction="N", scope="U", confidentiality="H", integrity="H", availability="H"),
         },
     ],
     "iis": [
         {
-            "pattern": r"Microsoft-IIS/([6-9]|10\.0)",
             "cve": "CVE-2017-7269",
-            "severity": "CRITICAL",
-            "description": "IIS WebDAV RCE (ScStoragePathFromUrl)",
+            "product": r"Microsoft-IIS/(?P<ver>6\.0)",
+            "ranges": [((6, 0, 0, 0), (6, 1, 0, 0))],
+            "description": "IIS 6.0 WebDAV ScStoragePathFromUrl buffer overflow (IIS 6.0 only)",
             "cvss": CVSSScore(attack_vector="N", attack_complexity="L", privileges_required="N",
-                            user_interaction="N", scope="U", confidentiality="H", integrity="H", availability="H"),
+                              user_interaction="N", scope="U", confidentiality="H", integrity="H", availability="H"),
         },
     ],
 }
 
 def check_cve(banner, service):
-    """Check banner against CVE database with CVSS scoring."""
+    """Match a banner or version string against CVE_DB.
+
+    A CVE matches when the product regex matches AND the parsed version falls in an
+    affected range. The old unanchored patterns flagged patched versions and never
+    checked the upper bound.
+    """
     vulns = []
     text = f"{banner} {service}".lower()
-    
-    for key, cves in CVE_DB.items():
-        if key in text:
-            for cve_entry in cves:
-                if re.search(cve_entry["pattern"], banner, re.I):
-                    cvss = cve_entry["cvss"]
-                    cvss.calculate()
-                    vulns.append({
-                        "cve": cve_entry["cve"],
-                        "severity": cvss.severity,
-                        "description": cve_entry["description"],
-                        "cvss_score": cvss.base_score,
-                        "cvss_vector": cvss.vector,
-                    })
-    
+    for key, entries in CVE_DB.items():
+        if key not in text:
+            continue
+        for entry in entries:
+            m = re.search(entry["product"], banner or "", re.I)
+            if not m:
+                continue
+            version = ""
+            if entry["ranges"] is None:
+                affected = True
+            else:
+                version = m.group("ver")
+                v = parse_version(version)
+                affected = any(lo <= v < hi for lo, hi in entry["ranges"])
+            if not affected:
+                continue
+            cvss = entry["cvss"].calculate()
+            vulns.append({
+                "cve": entry["cve"],
+                "severity": cvss.severity,
+                "description": entry["description"],
+                "cvss_score": cvss.base_score,
+                "cvss_vector": cvss.vector,
+                "matched_version": version,
+                "confidence": entry.get("confidence", 0.9),
+            })
     return vulns
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1073,7 +1114,7 @@ EXPLOIT_DB: Dict[str, ExploitInfo] = {
         remediation_priority=1),
 }
 
-def analyze_attack_paths(port_results, os_hint=""):
+def analyze_attack_paths(port_results, os_hint="", verifications=None):
     """Analyze all open ports and generate attack path report."""
     attack_paths = []
     total_exploitability = 0
@@ -1107,6 +1148,15 @@ def analyze_attack_paths(port_results, os_hint=""):
             elif "Linux" in os_hint and port in [22, 6379, 27017, 9200]:
                 risk_score = min(100, risk_score + 10)
             
+            # A path is CONFIRMED only with evidence: a passing verification probe or a
+            # positive deep-probe observation. An open port alone is POTENTIAL.
+            port_verification = (verifications or {}).get(port)
+            confirmed = bool(port_verification is not None and port_verification.verified)
+            if deep and (deep.get("auth_required") is False or deep.get("anonymous_login")):
+                confirmed = True
+            evidence = ""
+            if port_verification is not None:
+                evidence = port_verification.evidence
             path = {
                 "port": port,
                 "service": exploit_info.name,
@@ -1121,7 +1171,9 @@ def analyze_attack_paths(port_results, os_hint=""):
                 "first_seen": exploit_info.first_seen,
                 "remediation_priority": exploit_info.remediation_priority,
                 "deep_findings": deep,
-                "verified": deep.get("verified", False) if deep else False
+                "verified": confirmed,
+                "status": "CONFIRMED" if confirmed else "POTENTIAL",
+                "evidence": evidence,
             }
             attack_paths.append(path)
     
@@ -1182,13 +1234,14 @@ async def verify_smb_eternalblue(ip: str, port: int = 445, timeout: float = 3.0)
         
         # Check response for SMBv1 indicators
         if b'NT LM 0.12' in response or b'LANMAN' in response:
-            # SMBv1 detected - likely vulnerable
+            # SMBv1 is offered. That does not prove MS17-010: the patch state needs a
+            # transaction probe, which this module does not implement. Report POSSIBLE only.
             return VerificationResult(
                 vulnerability="MS17-010 (EternalBlue)",
-                verified=True,
-                confidence=0.85,
-                evidence="SMBv1 protocol detected in negotiate response",
-                exploitability="LIKELY",
+                verified=False,
+                confidence=0.5,
+                evidence="SMBv1 offered; MS17-010 patch state not tested (POSSIBLE, not verified)",
+                exploitability="POSSIBLE",
                 safe_test=True,
                 details={"protocol_version": "SMBv1", "response_length": len(response)}
             )
@@ -2045,37 +2098,50 @@ def is_private_ip(ip_str):
     except:
         return False
 
-def check_scope(target_str, authorized=False):
-    """Check if target is in authorized scope."""
+def check_scope(target_str, authorized=False, hosts=None, allow_networks=None):
+    """Authorization gate. Fails closed.
+
+    - Every resolved host is checked (not a sample of the first few).
+    - If allow_networks is given, every host must fall inside one of them.
+    - Public hosts need --authorize, or an interactive "y" answer.
+    - Any unexpected error aborts the scan.
+    """
     try:
-        if "/" in target_str:
-            network = ipaddress.ip_network(target_str, strict=False)
-            # Check if any host in the network is public
-            sample_hosts = list(network.hosts())[:5]
-            has_public = any(not is_private_ip(str(h)) for h in sample_hosts)
-        else:
-            has_public = not is_private_ip(target_str)
-        
-        if has_public and not authorized:
-            print(f"\n  {C.R}{C.BOLD}⚠ SCOPE WARNING: Target includes public IPs!{C.E}")
+        if not hosts:
+            print(f"  {C.R}Scope check: no resolved hosts for {target_str}.{C.E}")
+            log_audit("warning", "Scope check failed — no hosts", target=target_str)
+            return False
+
+        if allow_networks:
+            outside = [h for h in hosts
+                       if not any(ipaddress.ip_address(h) in net for net in allow_networks)]
+            if outside:
+                print(f"  {C.R}{C.BOLD}Scope: {len(outside)} host(s) are outside the --scope allowlist "
+                      f"(e.g. {outside[0]}). Scan aborted.{C.E}")
+                log_audit("warning", "Scan aborted — target outside scope allowlist",
+                          target=target_str, example=outside[0], count=len(outside))
+                return False
+
+        public = [h for h in hosts if not is_private_ip(h)]
+        if public and not authorized:
+            print(f"\n  {C.R}{C.BOLD}⚠ SCOPE WARNING: {len(public)} public host(s) in target "
+                  f"(e.g. {public[0]}){C.E}")
             print(f"  {C.Y}   Scanning public IPs without authorization may be illegal.{C.E}")
             print(f"  {C.Y}   Use --authorize to confirm you have permission.{C.E}\n")
-            
-            try:
-                resp = input(f"  {C.BOLD}Do you have authorization to scan this target? [y/N]: {C.E}").strip().lower()
-                if resp != "y":
-                    print(f"  {C.R}Scan aborted — no authorization.{C.E}")
-                    log_audit("warning", "Scan aborted — no authorization", target=target_str)
-                    return False
-            except:
+            resp = input(f"  {C.BOLD}Do you have authorization to scan this target? [y/N]: {C.E}").strip().lower()
+            if resp != "y":
+                print(f"  {C.R}Scan aborted — no authorization.{C.E}")
+                log_audit("warning", "Scan aborted — no authorization", target=target_str)
                 return False
-        
-        log_audit("info", "Scope check passed", target=target_str, authorized=authorized or not has_public)
+
+        log_audit("info", "Scope check passed", target=target_str, hosts=len(hosts),
+                  public_hosts=len(public), authorized=bool(authorized or not public))
         return True
-        
+
     except Exception as e:
-        print(f"  {C.Y}[!] Scope check error: {e}{C.E}")
-        return True  # Allow on error
+        print(f"  {C.R}Scope check failed ({e}); aborting. The gate fails closed.{C.E}")
+        log_audit("error", "Scope check error — aborting", target=target_str, error=str(e))
+        return False
 
 # ═══════════════════════════════════════════════════════════════════
 #  SECTION 11: HOSTNAME RESOLUTION
@@ -2151,91 +2217,58 @@ def checksum(data):
     s += s >> 16
     return ~s & 0xffff
 
-def create_tcp_packet(src_ip, dst_ip, src_port, dst_port, flags, seq=0, ack=0, 
+def is_ipv6(ip):
+    """True when ip is an IPv6 address literal."""
+    return ":" in str(ip)
+
+def _ip_header(src_ip, dst_ip, total_len, ip_id, frag_field, proto=6):
+    """Build a 20-byte IPv4 header with a valid header checksum."""
+    hdr = struct.pack('!BBHHHBBH4s4s', 0x45, 0, total_len, ip_id, frag_field,
+                      64, proto, 0, socket.inet_aton(src_ip), socket.inet_aton(dst_ip))
+    return hdr[:10] + struct.pack('!H', checksum(hdr)) + hdr[12:]
+
+def tcp_checksum(src_ip, dst_ip, tcp_segment):
+    """RFC 793 TCP checksum: pseudo-header + segment. The segment's checksum field must be zero."""
+    pseudo = (socket.inet_aton(src_ip) + socket.inet_aton(dst_ip)
+              + struct.pack('!BBH', 0, 6, len(tcp_segment)))
+    return checksum(pseudo + tcp_segment)
+
+def create_tcp_packet(src_ip, dst_ip, src_port, dst_port, flags, seq=0, ack=0,
                       window=1024, options=b"", mtu=0):
-    """Create a TCP packet with optional fragmentation."""
-    
-    # TCP Header
-    tcp_offset = 5 + (len(options) + 3) // 4  # Account for options
-    tcp_header = struct.pack('!HHIIBBHHH',
-        src_port, dst_port, seq, ack,
-        (tcp_offset << 4), flags, window, 0, 0) + options
-    
-    # Calculate TCP checksum
-    tcp_check = checksum(tcp_header)
-    tcp_header = struct.pack('!HHIIBBHHH',
-        src_port, dst_port, seq, ack,
-        (tcp_offset << 4), flags, window, tcp_check, 0) + options
-    
-    # IP Header
-    ip_ver = 4
-    ip_ihl = 5
-    ip_tos = 0
+    """Build raw IPv4/TCP packet(s). Returns a list of byte strings.
+
+    With mtu > 0 and an oversized segment, the TCP segment is split into IP
+    fragments. Every fragment except the last carries a multiple of 8 bytes
+    (RFC 791), and the TCP checksum is computed over the whole segment first.
+    """
+    options = options + b"\x00" * (-len(options) % 4)
+    offset_words = 5 + len(options) // 4
+    header = struct.pack('!HHIIBBHHH', src_port, dst_port, seq & 0xFFFFFFFF,
+                         ack & 0xFFFFFFFF, offset_words << 4, flags, window, 0, 0) + options
+    segment = header[:16] + struct.pack('!H', tcp_checksum(src_ip, dst_ip, header)) + header[18:]
+
     ip_id = random.randint(1, 65535)
-    ip_flags = 0
-    ip_offset = 0
-    ip_ttl = 64
-    ip_proto = 6  # TCP
-    ip_check = 0
-    
-    total_len = 20 + len(tcp_header)
-    
-    # Handle fragmentation
-    if mtu > 0 and total_len > mtu:
-        # Fragment the packet
+    total_len = 20 + len(segment)
+    if mtu and mtu > 0 and total_len > mtu:
+        chunk = max(8, ((mtu - 20) // 8) * 8)
         fragments = []
-        data = tcp_header
-        offset = 0
-        
-        while data:
-            chunk_size = min(mtu - 20, len(data))
-            is_last = (chunk_size == len(data))
-            
-            frag_flags = 0x2000 if not is_last else 0  # MF flag
-            frag_offset = offset // 8
-            
-            ip_header = struct.pack('!BBHHHBBH4s4s',
-                (ip_ver << 4) + ip_ihl, ip_tos, 20 + chunk_size, ip_id,
-                frag_flags + frag_offset, ip_ttl, ip_proto, 0,
-                socket.inet_aton(src_ip), socket.inet_aton(dst_ip))
-            
-            # Calculate IP checksum
-            ip_check = checksum(ip_header)
-            ip_header = struct.pack('!BBHHHBBH4s4s',
-                (ip_ver << 4) + ip_ihl, ip_tos, 20 + chunk_size, ip_id,
-                frag_flags + frag_offset, ip_ttl, ip_proto, ip_check,
-                socket.inet_aton(src_ip), socket.inet_aton(dst_ip))
-            
-            fragments.append(ip_header + data[:chunk_size])
-            data = data[chunk_size:]
-            offset += chunk_size
-        
+        for off in range(0, len(segment), chunk):
+            data = segment[off:off + chunk]
+            more = off + chunk < len(segment)
+            frag_field = (0x2000 if more else 0) | (off // 8)
+            fragments.append(_ip_header(src_ip, dst_ip, 20 + len(data), ip_id, frag_field) + data)
         return fragments
-    
-    # Single packet
-    ip_header = struct.pack('!BBHHHBBH4s4s',
-        (ip_ver << 4) + ip_ihl, ip_tos, total_len, ip_id,
-        (ip_flags << 13) + ip_offset, ip_ttl, ip_proto, ip_check,
-        socket.inet_aton(src_ip), socket.inet_aton(dst_ip))
-    
-    ip_check = checksum(ip_header)
-    ip_header = struct.pack('!BBHHHBBH4s4s',
-        (ip_ver << 4) + ip_ihl, ip_tos, total_len, ip_id,
-        (ip_flags << 13) + ip_offset, ip_ttl, ip_proto, ip_check,
-        socket.inet_aton(src_ip), socket.inet_aton(dst_ip))
-    
-    return [ip_header + tcp_header]
+    return [_ip_header(src_ip, dst_ip, total_len, ip_id, 0) + segment]
 
 def get_local_ip(dst_ip):
-    """Get local IP address for reaching destination."""
+    """Local source address the kernel would use to reach dst_ip (IPv4 or IPv6)."""
+    family = socket.AF_INET6 if is_ipv6(dst_ip) else socket.AF_INET
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect((str(dst_ip), 80))
-        local_ip = s.getsockname()[0]
-        s.close()
-        return local_ip
-    except:
-        return "0.0.0.0"
+        with socket.socket(family, socket.SOCK_DGRAM) as s:
+            s.connect((str(dst_ip), 80))
+            return s.getsockname()[0]
+    except OSError:
+        return "::" if family == socket.AF_INET6 else "0.0.0.0"
 
 # TCP flag constants
 TCP_FIN = 0x01
@@ -2250,368 +2283,267 @@ TCP_URG = 0x20
 # ═══════════════════════════════════════════════════════════════════
 
 async def scan_connect(ip, port, timeout):
-    """TCP connect scan — returns (state, ttl, window_size)."""
+    """TCP connect scan — returns (state, ttl, window_size).
+
+    IPv4 and IPv6 both work; the socket family follows the address literal.
+    TTL and window are unknown for a connect scan, so they are reported as 0.
+    """
+    family = socket.AF_INET6 if is_ipv6(ip) else socket.AF_INET
+    sock = None
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock = socket.socket(family, socket.SOCK_STREAM)
         sock.setblocking(False)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
-        loop = asyncio.get_event_loop()
-        
-        try:
-            await asyncio.wait_for(
-                loop.sock_connect(sock, (str(ip), port)),
-                timeout=timeout
-            )
-            
-            # Get peer info for OS fingerprinting
-            ttl = 0
-            window_size = 0
-            try:
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                # Get socket options
-                try:
-                    window_size = sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
-                except:
-                    pass
-            except:
-                pass
-            
-            sock.close()
-            return PortState.OPEN, ttl, window_size
-            
-        except asyncio.TimeoutError:
-            sock.close()
-            return PortState.FILTERED, 0, 0
-        except ConnectionRefusedError:
-            sock.close()
+        loop = asyncio.get_running_loop()
+        await asyncio.wait_for(loop.sock_connect(sock, (str(ip), port)), timeout=timeout)
+        return PortState.OPEN, 0, 0
+    except asyncio.TimeoutError:
+        return PortState.FILTERED, 0, 0
+    except ConnectionRefusedError:
+        return PortState.CLOSED, 0, 0
+    except OSError as e:
+        if e.errno == 111:  # Connection refused
             return PortState.CLOSED, 0, 0
-        except OSError as e:
-            sock.close()
-            if e.errno == 111:  # Connection refused
-                return PortState.CLOSED, 0, 0
-            elif e.errno == 113:  # No route to host
-                return PortState.FILTERED, 0, 0
-            return PortState.FILTERED, 0, 0
-            
+        return PortState.FILTERED, 0, 0
     except Exception:
         return PortState.FILTERED, 0, 0
+    finally:
+        if sock is not None:
+            sock.close()
+
+class RawTCPEngine:
+    """One shared raw IPv4 TCP socket used by every raw-probe scan type.
+
+    Sending and receiving both run on the event loop, so no call blocks it.
+    A reply is matched to its probe by (remote ip, remote port, our source
+    port). Only RST and SYN+ACK segments are considered, which drops echoes of
+    our own packets. SYN probes also require the reply's ACK number to equal
+    our sequence number + 1.
+    """
+
+    def __init__(self, loop):
+        self.loop = loop
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+        self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+        self.sock.setblocking(False)
+        self.pending = {}          # (dst_ip, dst_port, src_port) -> (future, expected_ack)
+        self.ports_in_use = set()
+        loop.add_reader(self.sock.fileno(), self._on_readable)
+
+    def close(self):
+        try:
+            self.loop.remove_reader(self.sock.fileno())
+        except Exception:
+            pass
+        self.sock.close()
+        for fut, _ in self.pending.values():
+            if not fut.done():
+                fut.cancel()
+        self.pending.clear()
+        self.ports_in_use.clear()
+
+    async def send(self, packets, dst_ip):
+        for pkt in packets:
+            await self.loop.sock_sendto(self.sock, pkt, (str(dst_ip), 0))
+
+    def _alloc_port(self):
+        for _ in range(10000):
+            port = random.randint(40000, 65535)
+            if port not in self.ports_in_use:
+                self.ports_in_use.add(port)
+                return port
+        raise RuntimeError("no free source port for raw probe")
+
+    async def probe(self, dst_ip, dst_port, flags, timeout, src_ip, seq,
+                    expected_ack=None, mtu=0):
+        """Send one probe and wait for its reply. Returns (reply or None, src_port)."""
+        dst_ip = str(dst_ip)
+        src_port = self._alloc_port()
+        key = (dst_ip, dst_port, src_port)
+        fut = self.loop.create_future()
+        self.pending[key] = (fut, expected_ack)
+        try:
+            packets = create_tcp_packet(src_ip, dst_ip, src_port, dst_port, flags, seq, mtu=mtu)
+            await self.send(packets, dst_ip)
+            try:
+                reply = await asyncio.wait_for(fut, timeout)
+            except asyncio.TimeoutError:
+                reply = None
+            return reply, src_port
+        finally:
+            self.pending.pop(key, None)
+            self.ports_in_use.discard(src_port)
+
+    def _on_readable(self):
+        while True:
+            try:
+                data, _ = self.sock.recvfrom(65535)
+            except (BlockingIOError, InterruptedError):
+                return
+            except OSError:
+                return
+            self._dispatch(data)
+
+    def _dispatch(self, data):
+        if len(data) < 20 or (data[0] >> 4) != 4:
+            return
+        ihl = (data[0] & 0x0F) * 4
+        if data[9] != 6 or len(data) < ihl + 16:
+            return
+        src_ip = socket.inet_ntoa(data[12:16])
+        sport, dport, _seq, ack, _off, flags, window = struct.unpack('!HHIIBBH', data[ihl:ihl + 16])
+        # Only RST or SYN+ACK can answer a probe. Our own outgoing packets are echoed back
+        # on loopback, and they never carry these flags, so they are ignored here.
+        if not ((flags & TCP_RST) or (flags & TCP_SYN and flags & TCP_ACK)):
+            return
+        entry = self.pending.get((src_ip, sport, dport))
+        if entry is None:
+            return
+        fut, expected_ack = entry
+        if fut.done():
+            return
+        if expected_ack is not None and ack != expected_ack:
+            return
+        fut.set_result({"flags": flags, "seq": _seq, "ack": ack,
+                        "window": window, "ttl": data[8]})
+
+_RAW_ENGINE = None
+
+def get_raw_engine():
+    """Return the shared raw engine for the running event loop, creating it if needed."""
+    global _RAW_ENGINE
+    loop = asyncio.get_running_loop()
+    if _RAW_ENGINE is None or _RAW_ENGINE.loop is not loop:
+        if _RAW_ENGINE is not None:
+            _RAW_ENGINE.close()
+        _RAW_ENGINE = RawTCPEngine(loop)
+    return _RAW_ENGINE
+
+def close_raw_engine():
+    """Close the shared raw engine (called at the end of a port scan)."""
+    global _RAW_ENGINE
+    if _RAW_ENGINE is not None:
+        _RAW_ENGINE.close()
+        _RAW_ENGINE = None
+
+def _raw_available(ip):
+    """Raw TCP probes need root and are implemented for IPv4 only."""
+    if not IS_ROOT:
+        return False
+    if is_ipv6(ip):
+        log_audit("warning", "Raw TCP scan is IPv4-only; using connect semantics", target=ip)
+        return False
+    return True
 
 async def scan_syn(ip, port, timeout, src_ip=None, decoys=None, mtu=0):
     """SYN stealth scan — returns (state, ttl, window_size)."""
-    if not IS_ROOT:
+    if not _raw_available(ip):
         return await scan_connect(ip, port, timeout)
-    
     try:
+        engine = get_raw_engine()
+        ip = str(ip)
         if src_ip is None:
             src_ip = get_local_ip(ip)
-        
-        src_port = random.randint(40000, 65535)
-        seq_num = random.randint(1, 2**32 - 1)
-        
-        # Create raw socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-        sock.settimeout(timeout)
-        
-        # Send decoy packets first (if any)
-        if decoys:
-            for decoy_ip in decoys:
-                try:
-                    decoy_packets = create_tcp_packet(
-                        decoy_ip, str(ip), src_port, port, TCP_SYN,
-                        seq_num, mtu=mtu
-                    )
-                    for pkt in decoy_packets:
-                        sock.sendto(pkt, (str(ip), 0))
-                except:
-                    pass
-        
-        # Send real SYN packet
-        packets = create_tcp_packet(
-            src_ip, str(ip), src_port, port, TCP_SYN,
-            seq_num, mtu=mtu
-        )
-        
-        for pkt in packets:
-            sock.sendto(pkt, (str(ip), 0))
-        
-        # Wait for response
-        try:
-            data, addr = sock.recvfrom(4096)
-            
-            # Parse IP header to get TTL
-            ip_header = data[:20]
-            ttl = ip_header[8]
-            
-            # Parse TCP header
-            tcp_header = data[20:40]
-            tcp_flags = tcp_header[13]
-            window_size = struct.unpack('!H', tcp_header[14:16])[0]
-            
-            sock.close()
-            
-            if tcp_flags & TCP_SYN and tcp_flags & TCP_ACK:
-                # SYN-ACK = open
-                # Send RST to close connection
-                try:
-                    rst_sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-                    rst_sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-                    ack_num = struct.unpack('!I', tcp_header[4:8])[0] + 1
-                    rst_packets = create_tcp_packet(
-                        src_ip, str(ip), src_port, port, TCP_RST,
-                        ack_num, 0
-                    )
-                    for pkt in rst_packets:
-                        rst_sock.sendto(pkt, (str(ip), 0))
-                    rst_sock.close()
-                except:
-                    pass
-                
-                return PortState.OPEN, ttl, window_size
-                
-            elif tcp_flags & TCP_RST:
-                # RST = closed
-                return PortState.CLOSED, ttl, window_size
-            
-        except socket.timeout:
-            sock.close()
+        seq = random.randint(1, 2**32 - 1)
+
+        # Decoy SYNs use spoofed sources. Their replies go to the decoys, so we never wait on them.
+        for decoy_ip in (decoys or []):
+            try:
+                pkts = create_tcp_packet(decoy_ip, ip, random.randint(40000, 65535), port,
+                                         TCP_SYN, seq, mtu=mtu)
+                await engine.send(pkts, ip)
+            except OSError:
+                pass
+
+        reply, src_port = await engine.probe(ip, port, TCP_SYN, timeout, src_ip, seq,
+                                             expected_ack=(seq + 1) & 0xFFFFFFFF, mtu=mtu)
+        if reply is None:
             return PortState.FILTERED, 0, 0
-        
-        sock.close()
-        return PortState.FILTERED, 0, 0
-        
+        if reply["flags"] & TCP_SYN and reply["flags"] & TCP_ACK:
+            # Open: reset the half-open connection. RFC 793 uses SEG.ACK as the RST sequence.
+            rst = create_tcp_packet(src_ip, ip, src_port, port, TCP_RST, reply["ack"])
+            try:
+                await engine.send(rst, ip)
+            except OSError:
+                pass
+            return PortState.OPEN, reply["ttl"], reply["window"]
+        return PortState.CLOSED, reply["ttl"], reply["window"]
     except Exception:
         return PortState.FILTERED, 0, 0
 
 async def scan_ack(ip, port, timeout, src_ip=None):
     """ACK scan — determines if port is filtered or unfiltered."""
-    if not IS_ROOT:
+    if not _raw_available(ip):
         # Without raw sockets, ACK scan falls back to connect
         state, ttl, win = await scan_connect(ip, port, timeout)
         if state == PortState.OPEN or state == PortState.CLOSED:
             return PortState.UNFILTERED, ttl, win
         return PortState.FILTERED, 0, 0
-    
     try:
+        engine = get_raw_engine()
+        ip = str(ip)
         if src_ip is None:
             src_ip = get_local_ip(ip)
-        
-        src_port = random.randint(40000, 65535)
-        seq_num = random.randint(1, 2**32 - 1)
-        
-        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-        sock.settimeout(timeout)
-        
-        packets = create_tcp_packet(src_ip, str(ip), src_port, port, TCP_ACK, seq_num)
-        for pkt in packets:
-            sock.sendto(pkt, (str(ip), 0))
-        
-        try:
-            data, addr = sock.recvfrom(4096)
-            ip_header = data[:20]
-            ttl = ip_header[8]
-            tcp_header = data[20:40]
-            tcp_flags = tcp_header[13]
-            window_size = struct.unpack('!H', tcp_header[14:16])[0]
-            
-            sock.close()
-            
-            if tcp_flags & TCP_RST:
-                # RST = unfiltered (port may be open or closed, but not filtered)
-                return PortState.UNFILTERED, ttl, window_size
-            
-        except socket.timeout:
-            sock.close()
-            return PortState.FILTERED, 0, 0
-        
-        sock.close()
+        seq = random.randint(1, 2**32 - 1)
+        reply, _ = await engine.probe(ip, port, TCP_ACK, timeout, src_ip, seq)
+        if reply is not None and reply["flags"] & TCP_RST:
+            # RST = unfiltered (port may be open or closed, but not filtered)
+            return PortState.UNFILTERED, reply["ttl"], reply["window"]
         return PortState.FILTERED, 0, 0
-        
+    except Exception:
+        return PortState.FILTERED, 0, 0
+
+async def _raw_flag_scan(ip, port, timeout, src_ip, flags):
+    """Shared logic for FIN, XMAS and NULL scans: RST = closed, silence = open|filtered."""
+    try:
+        engine = get_raw_engine()
+        ip = str(ip)
+        if src_ip is None:
+            src_ip = get_local_ip(ip)
+        seq = random.randint(1, 2**32 - 1)
+        reply, _ = await engine.probe(ip, port, flags, timeout, src_ip, seq)
+        if reply is None:
+            return PortState.OPEN_FILTERED, 0, 0
+        if reply["flags"] & TCP_RST:
+            return PortState.CLOSED, reply["ttl"], reply["window"]
+        return PortState.OPEN_FILTERED, 0, 0
     except Exception:
         return PortState.FILTERED, 0, 0
 
 async def scan_fin(ip, port, timeout, src_ip=None):
     """FIN scan — closed ports respond with RST, open ports stay silent."""
-    if not IS_ROOT:
-        state, ttl, win = await scan_connect(ip, port, timeout)
-        return state, ttl, win
-    
-    try:
-        if src_ip is None:
-            src_ip = get_local_ip(ip)
-        
-        src_port = random.randint(40000, 65535)
-        seq_num = random.randint(1, 2**32 - 1)
-        
-        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-        sock.settimeout(timeout)
-        
-        packets = create_tcp_packet(src_ip, str(ip), src_port, port, TCP_FIN, seq_num)
-        for pkt in packets:
-            sock.sendto(pkt, (str(ip), 0))
-        
-        try:
-            data, addr = sock.recvfrom(4096)
-            ip_header = data[:20]
-            ttl = ip_header[8]
-            tcp_header = data[20:40]
-            tcp_flags = tcp_header[13]
-            window_size = struct.unpack('!H', tcp_header[14:16])[0]
-            
-            sock.close()
-            
-            if tcp_flags & TCP_RST:
-                return PortState.CLOSED, ttl, window_size
-            
-        except socket.timeout:
-            sock.close()
-            # No response = open|filtered
-            return PortState.OPEN_FILTERED, 0, 0
-        
-        sock.close()
-        return PortState.OPEN_FILTERED, 0, 0
-        
-    except Exception:
-        return PortState.FILTERED, 0, 0
+    if not _raw_available(ip):
+        return await scan_connect(ip, port, timeout)
+    return await _raw_flag_scan(ip, port, timeout, src_ip, TCP_FIN)
 
 async def scan_xmas(ip, port, timeout, src_ip=None):
     """XMAS scan (FIN+PSH+URG) — closed ports respond with RST."""
-    if not IS_ROOT:
-        state, ttl, win = await scan_connect(ip, port, timeout)
-        return state, ttl, win
-    
-    try:
-        if src_ip is None:
-            src_ip = get_local_ip(ip)
-        
-        src_port = random.randint(40000, 65535)
-        seq_num = random.randint(1, 2**32 - 1)
-        
-        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-        sock.settimeout(timeout)
-        
-        # FIN + PSH + URG = 0x29
-        flags = TCP_FIN | TCP_PSH | TCP_URG
-        packets = create_tcp_packet(src_ip, str(ip), src_port, port, flags, seq_num)
-        for pkt in packets:
-            sock.sendto(pkt, (str(ip), 0))
-        
-        try:
-            data, addr = sock.recvfrom(4096)
-            ip_header = data[:20]
-            ttl = ip_header[8]
-            tcp_header = data[20:40]
-            tcp_flags = tcp_header[13]
-            window_size = struct.unpack('!H', tcp_header[14:16])[0]
-            
-            sock.close()
-            
-            if tcp_flags & TCP_RST:
-                return PortState.CLOSED, ttl, window_size
-            
-        except socket.timeout:
-            sock.close()
-            return PortState.OPEN_FILTERED, 0, 0
-        
-        sock.close()
-        return PortState.OPEN_FILTERED, 0, 0
-        
-    except Exception:
-        return PortState.FILTERED, 0, 0
+    if not _raw_available(ip):
+        return await scan_connect(ip, port, timeout)
+    return await _raw_flag_scan(ip, port, timeout, src_ip, TCP_FIN | TCP_PSH | TCP_URG)
 
 async def scan_null(ip, port, timeout, src_ip=None):
     """NULL scan (no flags) — closed ports respond with RST."""
-    if not IS_ROOT:
-        state, ttl, win = await scan_connect(ip, port, timeout)
-        return state, ttl, win
-    
-    try:
-        if src_ip is None:
-            src_ip = get_local_ip(ip)
-        
-        src_port = random.randint(40000, 65535)
-        seq_num = random.randint(1, 2**32 - 1)
-        
-        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-        sock.settimeout(timeout)
-        
-        packets = create_tcp_packet(src_ip, str(ip), src_port, port, 0, seq_num)
-        for pkt in packets:
-            sock.sendto(pkt, (str(ip), 0))
-        
-        try:
-            data, addr = sock.recvfrom(4096)
-            ip_header = data[:20]
-            ttl = ip_header[8]
-            tcp_header = data[20:40]
-            tcp_flags = tcp_header[13]
-            window_size = struct.unpack('!H', tcp_header[14:16])[0]
-            
-            sock.close()
-            
-            if tcp_flags & TCP_RST:
-                return PortState.CLOSED, ttl, window_size
-            
-        except socket.timeout:
-            sock.close()
-            return PortState.OPEN_FILTERED, 0, 0
-        
-        sock.close()
-        return PortState.OPEN_FILTERED, 0, 0
-        
-    except Exception:
-        return PortState.FILTERED, 0, 0
+    if not _raw_available(ip):
+        return await scan_connect(ip, port, timeout)
+    return await _raw_flag_scan(ip, port, timeout, src_ip, 0)
 
 async def scan_window(ip, port, timeout, src_ip=None):
     """Window scan — like ACK but examines TCP window field."""
-    if not IS_ROOT:
-        state, ttl, win = await scan_connect(ip, port, timeout)
-        return state, ttl, win
-    
+    if not _raw_available(ip):
+        return await scan_connect(ip, port, timeout)
     try:
+        engine = get_raw_engine()
+        ip = str(ip)
         if src_ip is None:
             src_ip = get_local_ip(ip)
-        
-        src_port = random.randint(40000, 65535)
-        seq_num = random.randint(1, 2**32 - 1)
-        
-        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-        sock.settimeout(timeout)
-        
-        packets = create_tcp_packet(src_ip, str(ip), src_port, port, TCP_ACK, seq_num)
-        for pkt in packets:
-            sock.sendto(pkt, (str(ip), 0))
-        
-        try:
-            data, addr = sock.recvfrom(4096)
-            ip_header = data[:20]
-            ttl = ip_header[8]
-            tcp_header = data[20:40]
-            tcp_flags = tcp_header[13]
-            window_size = struct.unpack('!H', tcp_header[14:16])[0]
-            
-            sock.close()
-            
-            if tcp_flags & TCP_RST:
-                # Check window size to distinguish open from closed
-                if window_size > 0:
-                    return PortState.OPEN, ttl, window_size
-                else:
-                    return PortState.CLOSED, ttl, window_size
-            
-        except socket.timeout:
-            sock.close()
-            return PortState.FILTERED, 0, 0
-        
-        sock.close()
+        seq = random.randint(1, 2**32 - 1)
+        reply, _ = await engine.probe(ip, port, TCP_ACK, timeout, src_ip, seq)
+        if reply is not None and reply["flags"] & TCP_RST:
+            # RST with a non-zero window = open on some stacks; zero = closed
+            if reply["window"] > 0:
+                return PortState.OPEN, reply["ttl"], reply["window"]
+            return PortState.CLOSED, reply["ttl"], reply["window"]
         return PortState.FILTERED, 0, 0
-        
     except Exception:
         return PortState.FILTERED, 0, 0
 
@@ -2686,7 +2618,9 @@ async def adaptive_delay():
 # ═══════════════════════════════════════════════════════════════════
 
 def icmp_ping(ip, timeout=1):
-    """ICMP echo request."""
+    """ICMP echo request (IPv4 only; IPv6 hosts are discovered with the TCP probe)."""
+    if is_ipv6(ip):
+        return False
     try:
         result = subprocess.run(
             ["ping", "-c", "1", "-W", str(timeout), str(ip)],
@@ -2783,7 +2717,8 @@ async def host_discovery_tcp(hosts, timeout, concurrency):
             if stop_flag: return None
             for port in probe_ports:
                 try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    family = socket.AF_INET6 if is_ipv6(ip) else socket.AF_INET
+                    sock = socket.socket(family, socket.SOCK_STREAM)
                     sock.setblocking(False)
                     loop = asyncio.get_event_loop()
                     await asyncio.wait_for(
@@ -2880,7 +2815,7 @@ async def scan_udp_port(ip, port, timeout):
     }
     
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock = socket.socket(socket.AF_INET6 if is_ipv6(ip) else socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(timeout)
         
         probe = probes.get(port, b"")
@@ -2986,6 +2921,7 @@ async def port_scan_advanced(live_hosts, tcp_ports, udp_ports, timeout, concurre
     
     sys.stdout.write("\r" + " " * 120 + "\r")
     sys.stdout.flush()
+    close_raw_engine()
     return open_ports
 
 # ═══════════════════════════════════════════════════════════════════
@@ -3902,59 +3838,70 @@ def export_csv(data, path):
                             cves, vulns, cis.id, cis.title])
 
 def export_html(data, path):
-    """Export results to HTML report."""
+    """Export results to HTML report.
+
+    Every value that can come from a remote host (banners, versions, server
+    headers, CVE text) is HTML-escaped. Banners are attacker-controlled.
+    """
+    def _e(value):
+        return _html.escape(str(value), quote=True)
+
     rows = []
-    
+
     risky_count = data.get("risky_services", 0)
-    
+
     for ip, info in sorted(data["results"].items(), key=lambda x: ipaddress.ip_address(x[0])):
         score, level = info["risk_score"], info["risk_level"]
         rc = {"CRITICAL":"#e74c3c","HIGH":"#f39c12","MEDIUM":"#3498db","LOW":"#2ecc71"}.get(level,"#888")
-        
+
         for e in info["ports"]:
             rl = e.get("risk_level", "-")
             rlc = {"CRITICAL":"#e74c3c","HIGH":"#f39c12","MEDIUM":"#3498db","LOW":"#2ecc71"}.get(rl,"#888")
             deep = e.get("deep", {})
             deep_parts = []
-            if deep.get("server"): deep_parts.append(f"Server: {deep['server']}")
-            if deep.get("software"): deep_parts.append(f"Software: {deep['software']}")
+            if deep.get("server"): deep_parts.append(f"Server: {_e(deep['server'])}")
+            if deep.get("software"): deep_parts.append(f"Software: {_e(deep['software'])}")
             if deep.get("anonymous_login"): deep_parts.append("⚠ Anonymous Login")
             if deep.get("auth_required") == False: deep_parts.append("⚠ No Auth")
-            if deep.get("technologies"): deep_parts.append(f"Tech: {', '.join(deep['technologies'][:3])}")
-            if deep.get("paths"): deep_parts.append(f"Paths: {', '.join(deep['paths'][:3])}")
+            if deep.get("technologies"):
+                deep_parts.append(f"Tech: {_e(', '.join(str(t) for t in deep['technologies'][:3]))}")
+            if deep.get("paths"):
+                deep_parts.append(f"Paths: {_e(', '.join(str(p) for p in deep['paths'][:3]))}")
             if deep.get("weak_algorithms"): deep_parts.append(f"⚠ {len(deep['weak_algorithms'])} Weak Algos")
             deep_html = "<br>".join(deep_parts) if deep_parts else "-"
-            
+
             cves = e.get("cves", [])
-            cves_html = "<br>".join([f"⚠ {c['cve']} (CVSS {c.get('cvss_score','')}): {c['description']}" for c in cves]) if cves else ""
+            cves_html = "<br>".join([
+                f"⚠ {_e(c.get('cve',''))} (CVSS {_e(c.get('cvss_score',''))}): {_e(c.get('description',''))}"
+                for c in cves]) if cves else ""
             vulns = e.get("vulns", [])
-            vulns_html = "<br>".join([f"⚠ {v.get('title', str(v))}" for v in vulns if isinstance(v, dict)]) if vulns else "-"
-            
+            vulns_html = "<br>".join([f"⚠ {_e(v.get('title', str(v)))}" for v in vulns if isinstance(v, dict)]) if vulns else "-"
+
             # CIS info
             risk_info = RISK_DB.get(e["port"], {})
             cis = risk_info.get("cis", None)
             cis_html = ""
             if cis and cis.id:
-                cis_html = f"<br><small style='color:#888'>CIS {cis.id}: {cis.title}</small>"
-            
+                cis_html = f"<br><small style='color:#888'>CIS {_e(cis.id)}: {_e(cis.title)}</small>"
+
             proto_color = "#4dd0e1" if e.get("protocol") == "tcp" else "#9b59b6"
             state_color = {"open":"#2ecc71","closed":"#e74c3c","filtered":"#f39c12",
-                          "unfiltered":"#3498db","open|filtered":"#e67e22"}.get(e.get("state","open"),"#888")
-            
+                           "unfiltered":"#3498db","open|filtered":"#e67e22"}.get(e.get("state","open"),"#888")
+
             rows.append(f"""<tr>
-<td><b>{ip}</b></td><td><code>{info.get('mac','') or '-'}</code></td>
-<td style="background:{rc};color:#fff;padding:2px 8px;border-radius:3px">{level} ({score})</td>
-<td>{e['port']}</td><td style="color:{proto_color}">{e.get('protocol','tcp')}</td>
-<td style="color:{state_color}">{e.get('state','open')}</td>
-<td>{e.get('service','')}</td><td><small>{e.get('version','')[:50] or '-'}</small></td>
-<td>{e.get('os_hint','') or '-'}</td>
+<td><b>{_e(ip)}</b></td><td><code>{_e(info.get('mac','') or '-')}</code></td>
+<td style="background:{rc};color:#fff;padding:2px 8px;border-radius:3px">{_e(level)} ({_e(score)})</td>
+<td>{_e(e['port'])}</td><td style="color:{proto_color}">{_e(e.get('protocol','tcp'))}</td>
+<td style="color:{state_color}">{_e(e.get('state','open'))}</td>
+<td>{_e(e.get('service',''))}</td><td><small>{_e(e.get('version','')[:50]) or '-'}</small></td>
+<td>{_e(e.get('os_hint','')) or '-'}</td>
 <td><small>{deep_html}</small></td>
-<td style="background:{rlc};color:#fff;padding:2px 6px;border-radius:3px">{rl}</td>
+<td style="background:{rlc};color:#fff;padding:2px 6px;border-radius:3px">{_e(rl)}</td>
 <td><small style="color:#e74c3c">{cves_html}{vulns_html}{cis_html}</small></td>
 </tr>""")
-    
+
     html = f"""<!doctype html><html><head><meta charset="utf-8">
-<title>Yerscan Report — {data['target']}</title>
+<title>Yerscan Report — {_e(data['target'])}</title>
 <style>
 body{{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0f1419;color:#e6e6e6;padding:20px;margin:0}}
 h1{{color:#4dd0e1;font-size:28px}} .meta{{color:#888;font-size:13px;margin-bottom:20px}}
@@ -3970,18 +3917,18 @@ tr:hover{{background:#22282f}} .stats{{display:flex;gap:15px;margin:15px 0;flex-
 </style></head><body>
 <div class="logo">⚡ YERSCAN v{VERSION}</div>
 <h1>Professional Network Security Report</h1>
-<div class="meta">Target: <b>{data['target']}</b> · Scanned: {data['scan_time']} · Duration: {data['duration_seconds']}s · Scan Type: {data.get('scan_type','connect')}</div>
+<div class="meta">Target: <b>{_e(data['target'])}</b> · Scanned: {_e(data['scan_time'])} · Duration: {_e(data['duration_seconds'])}s · Scan Type: {_e(data.get('scan_type','connect'))}</div>
 <div class="stats">
-<div class="stat"><b>{data['hosts_alive']}</b><span>Hosts Alive</span></div>
-<div class="stat"><b>{data['hosts_with_ports']}</b><span>Hosts with Ports</span></div>
-<div class="stat"><b>{data['total_open_ports']}</b><span>Open Ports</span></div>
-<div class="stat"><b>{data.get('udp_ports',0)}</b><span>UDP Ports</span></div>
-<div class="stat"><b>{risky_count}</b><span>Risky Services</span></div>
-<div class="stat"><b>{data.get('deep_probed',0)}</b><span>Deep Probed</span></div>
-<div class="stat"><b>{data.get('cves_found',0)}</b><span>CVEs Found</span></div>
-<div class="stat"><b>{data.get('vulns_found',0)}</b><span>Vulns Found</span></div>
+<div class="stat"><b>{_e(data['hosts_alive'])}</b><span>Hosts Alive</span></div>
+<div class="stat"><b>{_e(data['hosts_with_ports'])}</b><span>Hosts with Ports</span></div>
+<div class="stat"><b>{_e(data['total_open_ports'])}</b><span>Open Ports</span></div>
+<div class="stat"><b>{_e(data.get('udp_ports',0))}</b><span>UDP Ports</span></div>
+<div class="stat"><b>{_e(risky_count)}</b><span>Risky Services</span></div>
+<div class="stat"><b>{_e(data.get('deep_probed',0))}</b><span>Deep Probed</span></div>
+<div class="stat"><b>{_e(data.get('cves_found',0))}</b><span>CVEs Found</span></div>
+<div class="stat"><b>{_e(data.get('vulns_found',0))}</b><span>Vulns Found</span></div>
 </div>
-{'<div class="alert"><b>⚠ SECURITY ALERT:</b> ' + str(data.get('vulns_found',0)) + ' vulnerabilities detected including ' + str(data.get('cves_found',0)) + ' CVEs!</div>' if data.get('vulns_found',0) > 0 else ''}
+{'<div class="alert"><b>⚠ SECURITY ALERT:</b> ' + _e(data.get('vulns_found',0)) + ' vulnerabilities detected including ' + _e(data.get('cves_found',0)) + ' CVEs!</div>' if data.get('vulns_found',0) > 0 else ''}
 <div class="note"><b>📊 Understanding the Report:</b><br>
 <b>Risky Services</b> = Inherently dangerous services (static risk assessment based on service type).<br>
 <b>Vulns Found</b> = Actual vulnerabilities discovered through probing (dynamic discoveries).<br>
@@ -3995,7 +3942,7 @@ tr:hover{{background:#22282f}} .stats{{display:flex;gap:15px;margin:15px 0;flex-
 </tr></thead><tbody>{''.join(rows)}</tbody></table>
 <p style="color:#555;font-size:11px;margin-top:30px">Generated by Yerscan v{VERSION} — Professional Network Scanner</p>
 </body></html>"""
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(html)
 
 # ═══════════════════════════════════════════════════════════════════
@@ -4231,8 +4178,19 @@ async def amain(args):
         print(f"{C.R}[✗] No valid targets.{C.E}")
         return
 
-    # Scope/authorization gate
-    if not check_scope(args.target, authorized=args.authorize):
+    # Scope/authorization gate (checks every resolved host)
+    scope_nets = None
+    if args.scope:
+        try:
+            with open(args.scope, encoding="utf-8") as fh:
+                scope_nets = [ipaddress.ip_network(line.strip(), strict=False)
+                              for line in fh
+                              if line.strip() and not line.lstrip().startswith("#")]
+        except (OSError, ValueError) as e:
+            print(f"{C.R}[✗] Could not read --scope file: {e}{C.E}")
+            return
+    if not check_scope(args.target, authorized=args.authorize, hosts=hosts,
+                       allow_networks=scope_nets):
         return
 
     # Large network warning
@@ -4538,7 +4496,8 @@ async def amain(args):
             
             # ATTACK PATH ANALYSIS
             os_hint = results[ip][0].os_hint if results[ip] else ""
-            attack_paths, exploit_score = analyze_attack_paths(results[ip], os_hint)
+            attack_paths, exploit_score = analyze_attack_paths(results[ip], os_hint,
+                                                                verifications.get(ip, {}))
             
             if attack_paths:
                 print(f"    {C.M}{C.BOLD}ATTACK PATHS ({len(attack_paths)} found, exploitability: {exploit_score:.0f}/100):{C.E}")
@@ -4546,7 +4505,9 @@ async def amain(args):
                     feas_color = {"TRIVIAL": C.R, "EASY": C.Y, "MODERATE": C.CY, "HARD": C.G, "THEORETICAL": C.D}
                     fc = feas_color.get(path["feasibility"], C.W)
                     
+                    st_color = C.G if path["verified"] else C.D
                     print(f"      {C.Y}{path['port']}/{path['service']}{C.E} "
+                          f"[{st_color}{path['status']}{C.E}] "
                           f"[{fc}{path['feasibility']}{C.E}] "
                           f"[{C.R}{path['impact']}{C.E}] "
                           f"Score: {path['risk_score']:.0f}")
@@ -4708,6 +4669,8 @@ def main():
     # Scope/authorization
     parser.add_argument("--authorize", action="store_true",
                         help="Confirm authorization to scan target")
+    parser.add_argument("--scope", default=None, metavar="FILE",
+                        help="Allowlist file (one CIDR/IP per line). Any target outside it aborts the scan")
     
     # Output
     parser.add_argument("--exclude", default=None,
