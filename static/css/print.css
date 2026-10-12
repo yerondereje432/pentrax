@@ -1,0 +1,69 @@
+@page {
+  size: A4;
+  margin: 14mm;
+}
+
+body { margin: 0; background: #fff; color: #17232d; font: 10px Arial, Helvetica, sans-serif; }
+.print-sheet { width: 100%; }
+
+.print-header, .section-heading, .host-findings-head, .print-footer { display: table; width: 100%; }
+.print-header > div, .section-heading > *, .host-findings-head > *, .print-footer > * { display: table-cell; vertical-align: top; }
+.print-header > div:last-child, .section-heading > span, .host-findings-head > span, .print-footer > span:last-child { text-align: right; }
+.print-header { padding-bottom: 16px; border-bottom: 2px solid #17232d; }
+.print-kicker { color: #167878; font-size: 8px; font-weight: bold; letter-spacing: 1px; }
+.print-header h1 { margin: 7px 0 4px; font-size: 24px; }
+.print-header p { margin: 0; color: #60717c; font-size: 9px; }
+.print-brand { color: #17232d; font-size: 15px; font-weight: bold; }
+.print-brand span { color: #87949c; font-size: 8px; font-weight: normal; }
+
+.metric-grid, .summary-grid { display: table; width: 100%; }
+.metric-grid { margin: 16px 0 10px; }
+.metric { display: table-cell; width: 25%; padding: 11px; border: 1px solid #dbe2e5; border-left: 3px solid #167878; vertical-align: top; }
+.metric span { display: block; color: #60717c; font-size: 7px; font-weight: bold; letter-spacing: 1px; }
+.metric strong { display: block; margin-top: 7px; font-size: 18px; }
+.summary-grid { margin: 0 0 4px; }
+.summary-grid .print-panel { display: table-cell; width: 33.333%; vertical-align: top; }
+.print-panel { padding: 12px; border: 1px solid #dbe2e5; page-break-inside: avoid; }
+.print-panel h2 { margin: 0 0 11px; font-size: 12px; }
+
+.risk-list { width: 100%; }
+.risk-row, .detail-list div, .finding-list li { display: table; width: 100%; }
+.risk-row { margin-bottom: 6px; color: #40515c; font-size: 9px; }
+.risk-row > *, .detail-list dt, .detail-list dd, .finding-list li > * { display: table-cell; vertical-align: middle; }
+.risk-row strong, .detail-list dd, .finding-list li > *:not(:first-child) { text-align: right; }
+.risk-dot { width: 8px; height: 8px; margin-right: 6px; background: #8b9aa2; }
+.risk-dot.critical { background: #c74f56; }
+.risk-dot.high { background: #d3942e; }
+.risk-dot.medium { background: #b5a62e; }
+.risk-dot.low { background: #3a9b72; }
+.risk-dot.info { background: #5c91cc; }
+.detail-list { margin: 0; }
+.detail-list div { padding: 0 0 7px; margin-bottom: 7px; border-bottom: 1px solid #edf0f1; }
+.detail-list div:last-child { margin-bottom: 0; border-bottom: 0; }
+.detail-list dt { color: #60717c; }
+.detail-list dd { color: #17232d; font-weight: bold; }
+
+.hosts-panel, .findings-panel, .host-findings-panel { margin-top: 10px; }
+.section-heading { margin-bottom: 8px; }
+.section-heading h2 { margin: 0; }
+.section-heading span { color: #788892; font-size: 8px; }
+table { width: 100%; }
+th { padding: 6px 5px; border-bottom: 1px solid #aebbc1; color: #60717c; font-size: 7px; text-align: left; }
+td { padding: 7px 5px; border-bottom: 1px solid #edf0f1; color: #334650; font-size: 9px; }
+td:first-child { font-family: Consolas, monospace; }
+.risk-label { display: inline-block; padding: 3px 5px; font-size: 7px; font-weight: bold; }
+.risk-label.critical { color: #b33c43; background: #f8dfe1; }
+.risk-label.high { color: #97641c; background: #faedd5; }
+.risk-label.medium { color: #807425; background: #f5f1d7; }
+.risk-label.low { color: #277455; background: #e1f3eb; }
+.risk-label.info { color: #35669f; background: #e4effd; }
+
+.host-findings { margin-top: 10px; padding-top: 9px; border-top: 1px solid #edf0f1; page-break-inside: avoid; }
+.host-findings:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+.host-findings-head strong { font-family: Consolas, monospace; }
+.finding-list { margin: 7px 0 0; padding: 0; list-style: none; }
+.finding-list li { color: #40515c; font-size: 8px; }
+.finding-list strong { color: #17232d; font-family: Consolas, monospace; }
+.finding-list em { color: #788892; font-size: 8px; font-style: normal; }
+.host-no-findings, .empty-copy { color: #60717c; margin: 0; }
+.print-footer { margin-top: 16px; padding-top: 9px; border-top: 1px solid #dbe2e5; color: #7a8991; font-size: 8px; }

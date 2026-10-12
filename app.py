@@ -234,6 +234,45 @@ def download_report(name: str):
     return send_file(path, as_attachment=True, download_name=path.name, mimetype="application/json")
 
 
+@app.get("/reports/<name>/pdf")
+def download_pdf(name: str):
+    """Render and download a clean PDF report summary."""
+    path = safe_report_path(name)
+    if path is None or not path.is_file():
+        return redirect(url_for("reports_list"))
+
+    try:
+        from xhtml2pdf import pisa
+    except ImportError:
+        app.logger.exception("xhtml2pdf is unavailable; install the application requirements.")
+        return jsonify({"error": "PDF export is unavailable because xhtml2pdf is not installed."}), 503
+
+    report = load_report(path)
+    html = render_template(
+        "report_print.html",
+        report=report,
+        report_name=name,
+        summary=summarise_report(report),
+        print_css=(BASE_DIR / "static" / "css" / "print.css").read_text(encoding="utf-8"),
+    )
+    pdf_buffer = io.BytesIO()
+    try:
+        status = pisa.CreatePDF(html, dest=pdf_buffer, path=str(BASE_DIR))
+    except (OSError, ValueError, TypeError):
+        app.logger.exception("xhtml2pdf could not render the PDF.")
+        return jsonify({"error": "PDF export failed while rendering the report."}), 500
+    if status.err:
+        app.logger.error("xhtml2pdf reported errors while rendering the PDF.")
+        return jsonify({"error": "PDF export failed while rendering the report."}), 500
+    pdf_buffer.seek(0)
+    return send_file(
+        pdf_buffer,
+        as_attachment=True,
+        download_name=f"{path.stem}_summary.pdf",
+        mimetype="application/pdf",
+    )
+
+
 @app.get("/reports/<name>/findings.csv")
 def findings_csv(name: str):
     from parser import flatten_findings

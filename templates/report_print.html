@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ report.target }} · yerscan summary</title>
+  {% if print_css is defined %}<style>{{ print_css|safe }}</style>{% else %}<link rel="stylesheet" href="{{ url_for('static', filename='css/print.css') }}">{% endif %}
+</head>
+<body>
+  <main class="print-sheet">
+    <header class="print-header">
+      <div>
+        <div class="print-kicker">YERSCAN · SECURITY REPORT</div>
+        <h1>{{ report.target }}</h1>
+        <p>{{ report.scan_type|default('Network')|upper }} scan · Completed {{ report.scan_time|replace('T', ' · ') }}</p>
+      </div>
+      <div class="print-brand">yerscan <span>v8.0</span></div>
+    </header>
+
+    <section class="metric-grid">
+      <div class="metric"><span>HOSTS ALIVE</span><strong>{{ report.hosts_alive|default(summary.hosts|length) }}</strong></div>
+      <div class="metric"><span>OPEN PORTS</span><strong>{{ report.total_open_ports|default(summary.open_ports) }}</strong></div>
+      <div class="metric"><span>CVEs FOUND</span><strong>{{ report.cves_found|default(0) }}</strong></div>
+      <div class="metric"><span>DURATION</span><strong>{{ report.duration_seconds|default(0) }}s</strong></div>
+    </section>
+
+    <section class="summary-grid">
+      <article class="print-panel">
+        <h2>Risk distribution</h2>
+        <div class="risk-list">
+          {% for level in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] %}
+          <div class="risk-row"><span class="risk-dot {{ level|lower }}"></span><span>{{ level }}</span><strong>{{ summary.risk_distribution[level] }}</strong></div>
+          {% endfor %}
+        </div>
+      </article>
+      <article class="print-panel">
+        <h2>CVE severity</h2>
+        <div class="risk-list">
+          {% for level in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] %}
+          <div class="risk-row"><span class="risk-dot {{ level|lower }}"></span><span>{{ level }}</span><strong>{{ summary.cve_distribution[level] }}</strong></div>
+          {% endfor %}
+        </div>
+      </article>
+      <article class="print-panel">
+        <h2>Exposure summary</h2>
+        <dl class="detail-list">
+          <div><dt>Most common vulnerable service</dt><dd>{{ summary.most_common_service[0] }}</dd></div>
+          <div><dt>Vulnerable ports</dt><dd>{{ summary.open_ports }}</dd></div>
+          <div><dt>Risk profile</dt><dd>{{ summary.risk_summary }}</dd></div>
+        </dl>
+      </article>
+    </section>
+
+    <section class="print-panel hosts-panel">
+      <div class="section-heading"><h2>Hosts by risk</h2><span>{{ summary.hosts|length }} host{{ '' if summary.hosts|length == 1 else 's' }}</span></div>
+      {% if summary.hosts %}
+      <table>
+        <thead><tr><th>HOST</th><th>RISK</th><th>SCORE</th><th>OPEN PORTS</th></tr></thead>
+        <tbody>
+          {% for host in summary.hosts[:10] %}
+          <tr><td>{{ host.ip }}</td><td><span class="risk-label {{ host.risk_level|default('INFO')|lower }}">{{ host.risk_level|default('INFO') }}</span></td><td>{{ host.risk_score|default(0) }} / 100</td><td>{{ host.ports|length }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="empty-copy">No hosts found in this report.</p>{% endif %}
+    </section>
+
+    <section class="print-panel host-findings-panel">
+      <div class="section-heading"><h2>Top risky hosts and findings</h2><span>Highest risk first</span></div>
+      {% for host in summary.hosts[:5] %}
+      {% set host_findings = summary.findings|selectattr('host_ip', 'equalto', host.ip)|selectattr('cve_id')|list %}
+      <div class="host-findings">
+        <div class="host-findings-head"><strong>{{ host.ip }}</strong><span class="risk-label {{ host.risk_level|default('INFO')|lower }}">{{ host.risk_level|default('INFO') }} · {{ host.risk_score|default(0) }}/100</span></div>
+        {% if host_findings %}
+        <ul class="finding-list">
+          {% for finding in host_findings[:4] %}
+          <li><span>{{ finding.service }}{% if finding.port %}:{{ finding.port }}{% endif %}</span><strong>{{ finding.cve_id }}</strong><em>{{ finding.risk_level|default('INFO') }}</em></li>
+          {% endfor %}
+        </ul>
+        {% else %}<p class="host-no-findings">No CVE findings recorded for this host.</p>{% endif %}
+      </div>
+      {% else %}<p class="empty-copy">No hosts found in this report.</p>{% endfor %}
+    </section>
+
+    <section class="print-panel findings-panel">
+      <div class="section-heading"><h2>Top findings</h2><span>Prioritized by severity</span></div>
+      {% set vulnerable_findings = summary.findings|selectattr('cve_id')|list %}
+      {% if vulnerable_findings %}
+      <table>
+        <thead><tr><th>HOST</th><th>SERVICE</th><th>SEVERITY</th><th>CVE</th><th>CVSS</th></tr></thead>
+        <tbody>
+          {% for finding in vulnerable_findings[:12] %}
+          <tr><td>{{ finding.host_ip }}:{{ finding.port }}</td><td>{{ finding.service }}{% if finding.version %} {{ finding.version }}{% endif %}</td><td><span class="risk-label {{ finding.risk_level|default('INFO')|lower }}">{{ finding.risk_level|default('INFO') }}</span></td><td>{{ finding.cve_id }}</td><td>{{ finding.cvss_score|default('—') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="empty-copy">No CVE findings were recorded.</p>{% endif %}
+    </section>
+
+    <footer class="print-footer"><span>Generated by yerscan</span><span>{{ report_name }}</span></footer>
+  </main>
+  {% if print_css is not defined %}<script>window.addEventListener('load', () => window.print());</script>{% endif %}
+</body>
+</html>
