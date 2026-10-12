@@ -1,4 +1,4 @@
-"""Scan Manager module for Yerscan Web.
+"""Scan Manager module for PENTRAX Web.
 
 Handles scan orchestration, background task lifecycle, event dispatching,
 and persistent scan storage.
@@ -17,14 +17,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Any
 
-# Ensure parent directory is in path so yerscan can be imported
+# Ensure parent directory is in path so pentrax can be imported
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import yerscan as ys
+import pentrax as ys
 
-logger = logging.getLogger("yerscan.web.manager")
+logger = logging.getLogger("pentrax.web.manager")
 
 SCANS_DIR = ROOT_DIR / "scans"
 SCANS_DIR.mkdir(parents=True, exist_ok=True)
@@ -222,7 +222,7 @@ class ScanManager:
         return task
 
     async def _run_scan(self, instance: ScanInstance):
-        """Background coroutine that invokes yerscan.amain with event callbacks."""
+        """Background coroutine that invokes pentrax.amain with event callbacks."""
         config = instance.config
         target = config.get("target", "").strip()
         instance.status = "running"
@@ -230,7 +230,7 @@ class ScanManager:
         instance.add_log(f"Starting scan on target: {target}")
         instance.broadcast({"type": "status_change", "status": "running"})
 
-        # Build Namespace matching yerscan CLI arguments
+        # Build Namespace matching pentrax CLI arguments
         scan_type = config.get("scan_type", "connect")
         if scan_type != "connect" and not ys.IS_ROOT:
             instance.add_log(f"Scan type '{scan_type}' requires root. Falling back to safe TCP connect.")

@@ -187,7 +187,7 @@ class TestWebAPI(unittest.TestCase):
 
     def test_vulnerability_sla_auto_assignment(self):
         """Vulnerability objects automatically assign industry standard SLAs based on risk level."""
-        import yerscan as ys
+        import pentrax as ys
         v_crit = ys.Vulnerability(id="CRIT-1", title="RCE", risk_level="CRITICAL")
         self.assertEqual(v_crit.remediation_sla, "48 Hours")
 
@@ -202,7 +202,7 @@ class TestWebAPI(unittest.TestCase):
 
     def test_audit_web_dast_logic(self):
         """audit_web_dast accurately catches missing headers, CORS reflection, and exposed paths."""
-        import yerscan as ys
+        import pentrax as ys
         import socket
         import threading
 
@@ -249,7 +249,7 @@ class TestWebAPI(unittest.TestCase):
 
     def test_audit_web_dast_robots_discovery(self):
         """audit_web_dast extracts routes from /robots.txt."""
-        import yerscan as ys
+        import pentrax as ys
         import socket
         import threading
 
