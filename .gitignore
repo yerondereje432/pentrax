@@ -27,6 +27,14 @@ yerscan_*.html
 pentrax_*.json
 pentrax_*.csv
 pentrax_*.html
+*.dump
+*.pcap
+*.pcapng
+
+# Environment & local secrets
+.env
+.env.*
+!.env.example
 
 # IDEs & Editor configurations
 .vscode/
@@ -34,6 +42,8 @@ pentrax_*.html
 *.swp
 *.swo
 *~
+*.sublime-workspace
+*.sublime-project
 
 # Operating System files
 .DS_Store

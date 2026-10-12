@@ -4,7 +4,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Framework](https://img.shields.io/badge/engine-AsyncIO%20%7C%20Starlette-crimson.svg)]()
-[![Build Status](https://img.shields.io/badge/tests-52%2F52%20passing-brightgreen.svg)]()
+[![Build Status](https://img.shields.io/badge/tests-57%2F57%20passing-brightgreen.svg)]()
 [![Security Compliance](https://img.shields.io/badge/standards-OWASP%20%7C%20CIS%20%7C%20MITRE-red.svg)]()
 
 > **PENTRAX** is a next-generation, high-concurrency vulnerability assessment platform engineered for cybersecurity researchers, penetration testers, and DevSecOps professionals. It bridges the gap between low-level network discovery, deep web application DAST (Dynamic Application Security Testing), SSL/TLS cryptographic auditing, and threat-actor intelligence mapping in a unified, modern web operations console.

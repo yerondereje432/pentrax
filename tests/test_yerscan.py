@@ -475,5 +475,51 @@ class TestConnectScan(unittest.TestCase):
             self.assertEqual(_run(ys.scan_connect("127.0.0.1", _free_port(), 1.0))[0], ys.PortState.CLOSED)
 
 
+class TestCSVHardening(unittest.TestCase):
+    """Test CSV formula injection / DDE prevention."""
+
+    def test_sanitize_csv_cell(self):
+        self.assertEqual(ys.sanitize_csv_cell("normal"), "normal")
+        self.assertEqual(ys.sanitize_csv_cell("=1+1"), "'=1+1")
+        self.assertEqual(ys.sanitize_csv_cell("+cmd|' /C calc'!A0"), "'+cmd|' /C calc'!A0")
+        self.assertEqual(ys.sanitize_csv_cell("-2+3"), "'-2+3")
+        self.assertEqual(ys.sanitize_csv_cell("@SUM(1,2)"), "'@SUM(1,2)")
+        self.assertEqual(ys.sanitize_csv_cell("\talert"), "'\talert")
+        self.assertEqual(ys.sanitize_csv_cell(None), "")
+
+    def test_export_csv_escapes_malicious_banners(self):
+        with tempfile.NamedTemporaryFile("r+", delete=False) as tf:
+            temp_path = tf.name
+        try:
+            fake_data = {
+                "results": {
+                    "127.0.0.1": {
+                        "mac": "=cmd",
+                        "ports": [
+                            {
+                                "port": 80,
+                                "protocol": "tcp",
+                                "state": "open",
+                                "service": "+malicious_service",
+                                "version": "@v1.0",
+                                "cves": [],
+                                "vulns": [{"title": "-vuln_trigger"}],
+                            }
+                        ]
+                    }
+                }
+            }
+            ys.export_csv(fake_data, temp_path)
+            with open(temp_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("'+malicious_service", content)
+            self.assertIn("'@v1.0", content)
+            self.assertIn("'-vuln_trigger", content)
+            self.assertIn("'=cmd", content)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+
 if __name__ == "__main__":
     unittest.main()

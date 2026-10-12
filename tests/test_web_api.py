@@ -247,6 +247,80 @@ class TestWebAPI(unittest.TestCase):
         finally:
             srv.close()
 
+    def test_audit_web_dast_robots_discovery(self):
+        """audit_web_dast extracts routes from /robots.txt."""
+        import yerscan as ys
+        import socket
+        import threading
+
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        port = srv.getsockname()[1]
+        srv.listen(5)
+
+        def run_server():
+            for _ in range(15):
+                try:
+                    conn, _ = srv.accept()
+                    req = conn.recv(1024).decode("utf-8", errors="ignore")
+                    if "GET /robots.txt" in req:
+                        body = "User-agent: *\nDisallow: /admin-panel\nAllow: /public-api\n"
+                        resp = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n{body}"
+                    else:
+                        body = "<html>OK</html>"
+                        resp = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n{body}"
+                    conn.sendall(resp.encode("utf-8"))
+                    conn.close()
+                except:
+                    break
+
+        th = threading.Thread(target=run_server, daemon=True)
+        th.start()
+
+        try:
+            vulns, dast_info = asyncio.run(ys.audit_web_dast("127.0.0.1", port, timeout=1.0))
+            self.assertIn("/admin-panel", dast_info.get("discovered_routes", []))
+            self.assertIn("/public-api", dast_info.get("discovered_routes", []))
+        finally:
+            srv.close()
+
+    def test_concurrency_conflict_409(self):
+        """POST /api/scans/start returns 409 Conflict if a scan is currently active."""
+        # Simulate active scan
+        fake_scan = ScanInstance("test_active", {"target": "127.0.0.1"})
+        fake_scan.status = "running"
+        scan_manager.scans["test_active"] = fake_scan
+
+        try:
+            resp = self.client.post("/api/scans/start", json={"target": "127.0.0.1"})
+            self.assertEqual(resp.status_code, 409)
+            self.assertIn("Another scan is currently in progress", resp.json()["error"])
+        finally:
+            scan_manager.scans.pop("test_active", None)
+
+    def test_api_key_auth_middleware(self):
+        """Requests to protected endpoints enforce PENTRAX_API_KEY if configured in environment."""
+        os.environ["PENTRAX_API_KEY"] = "super-secret-key-1337"
+        try:
+            # Unauthenticated request should fail with 401
+            resp = self.client.get("/api/scans")
+            self.assertEqual(resp.status_code, 401)
+            self.assertIn("Unauthorized", resp.json()["error"])
+
+            # Valid header authentication should pass
+            resp = self.client.get("/api/scans", headers={"X-API-Key": "super-secret-key-1337"})
+            self.assertEqual(resp.status_code, 200)
+
+            # Valid Bearer authorization should pass
+            resp = self.client.get("/api/scans", headers={"Authorization": "Bearer super-secret-key-1337"})
+            self.assertEqual(resp.status_code, 200)
+
+            # Frontend index.html should remain accessible without authentication
+            resp_index = self.client.get("/")
+            self.assertEqual(resp_index.status_code, 200)
+        finally:
+            os.environ.pop("PENTRAX_API_KEY", None)
+
 
 if __name__ == "__main__":
     unittest.main()
