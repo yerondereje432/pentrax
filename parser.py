@@ -106,3 +106,72 @@ def report_metadata(name: str, report: dict[str, Any]) -> dict[str, Any]:
         "cves_found": report.get("cves_found", sum(1 for row in summary["findings"] if row["cve_id"])),
         "risk_summary": summary["risk_summary"],
     }
+
+
+def _open_port_keys(report: dict[str, Any]) -> set[tuple[str, str, str]]:
+    """Return stable host/protocol/port identities for open ports in a report."""
+    keys: set[tuple[str, str, str]] = set()
+    for host_ip, raw_host in (report.get("results") or {}).items():
+        host = raw_host if isinstance(raw_host, dict) else {}
+        for port in host.get("ports", []) or []:
+            if not isinstance(port, dict) or str(port.get("state", "open")).lower() != "open":
+                continue
+            keys.add((str(host_ip), str(port.get("protocol", "tcp")), str(port.get("port", ""))))
+    return keys
+
+
+def _group_ports(keys: set[tuple[str, str, str]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for host, protocol, port in keys:
+        grouped.setdefault(host, []).append({"port": port, "protocol": protocol})
+    return [
+        {
+            "host": host,
+            "ports": sorted(items, key=lambda item: (item["protocol"], item["port"])),
+        }
+        for host, items in sorted(grouped.items())
+    ]
+
+
+def report_cve_ids(report: dict[str, Any]) -> set[str]:
+    """Return unique CVE identifiers represented by a report."""
+    return {str(row["cve_id"]) for row in flatten_findings(report) if row.get("cve_id")}
+
+
+def compare_reports(previous: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    """Compute the useful security deltas between two scans of the same target."""
+    previous_ports = _open_port_keys(previous)
+    current_ports = _open_port_keys(current)
+    previous_cves = report_cve_ids(previous)
+    current_cves = report_cve_ids(current)
+    previous_results = previous.get("results") or {}
+    current_results = current.get("results") or {}
+    risk_score_changes = []
+
+    for host_ip in sorted(set(previous_results) & set(current_results)):
+        previous_host = previous_results.get(host_ip) or {}
+        current_host = current_results.get(host_ip) or {}
+        previous_score = previous_host.get("risk_score", 0)
+        current_score = current_host.get("risk_score", 0)
+        try:
+            previous_score = float(previous_score)
+            current_score = float(current_score)
+        except (TypeError, ValueError):
+            continue
+        delta = current_score - previous_score
+        risk_score_changes.append(
+            {
+                "host": str(host_ip),
+                "previous": int(previous_score) if previous_score.is_integer() else previous_score,
+                "current": int(current_score) if current_score.is_integer() else current_score,
+                "delta": int(delta) if delta.is_integer() else delta,
+            }
+        )
+
+    risk_score_changes.sort(key=lambda item: (abs(item["delta"]), item["host"]), reverse=True)
+    return {
+        "new_open_ports": _group_ports(current_ports - previous_ports),
+        "closed_ports": _group_ports(previous_ports - current_ports),
+        "new_cves": sorted(current_cves - previous_cves),
+        "risk_score_changes": risk_score_changes,
+    }

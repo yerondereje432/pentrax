@@ -12,7 +12,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for
 
-from parser import load_report, report_metadata, summarise_report
+from parser import compare_reports, load_report, report_metadata, summarise_report
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -38,6 +38,53 @@ def available_reports() -> list[dict]:
     return items
 
 
+def _scan_sort_key(item: dict) -> tuple[datetime, str]:
+    value = str(item.get("scan_time") or "")
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        timestamp = datetime.min
+    return timestamp, str(item.get("name") or "")
+
+
+def history_context() -> dict:
+    """Build chronological scan entries, same-target diffs, and chart series."""
+    reports = available_reports()
+    reports_by_target: dict[str, list[dict]] = {}
+    for item in reports:
+        reports_by_target.setdefault(str(item.get("target") or "Unknown target"), []).append(item)
+
+    entries = []
+    chart_data = {}
+    for target, target_reports in reports_by_target.items():
+        ordered = sorted(target_reports, key=_scan_sort_key)
+        chart_data[target] = [
+            {
+                "name": item["name"],
+                "scan_time": item.get("scan_time", ""),
+                "open_ports": item.get("open_ports", 0),
+                "cves_found": item.get("cves_found", 0),
+            }
+            for item in ordered
+        ]
+        previous_report = None
+        previous_item = None
+        for item in ordered:
+            current_report = load_report(REPORT_DIR / item["name"])
+            entries.append(
+                {
+                    **item,
+                    "previous": previous_item,
+                    "diff": compare_reports(previous_report, current_report) if previous_report is not None else None,
+                }
+            )
+            previous_report = current_report
+            previous_item = item
+
+    entries.sort(key=_scan_sort_key)
+    return {"entries": entries, "chart_data": chart_data, "targets": sorted(chart_data)}
+
+
 def safe_report_path(name: str) -> Path | None:
     path = Path(name)
     if path.name != name or path.suffix.lower() != ".json":
@@ -53,6 +100,12 @@ def safe_report_path(name: str) -> Path | None:
 @app.get("/")
 def reports_list():
     return render_template("reports_list.html", reports=available_reports())
+
+
+@app.get("/history")
+def scan_history():
+    context = history_context()
+    return render_template("history.html", reports=available_reports(), **context)
 
 
 def render_reports_page(*, scan_error: str | None = None, scan_target: str = "", scan_preset: str = "quick"):

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% set active_page = 'history' %}
+{% block title %}Scan history · yerscan{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div><div class="eyebrow">CHANGE OVER TIME</div><h1>Scan history<span>.</span></h1><p>Review every assessment chronologically and track how each target's exposure changes.</p></div>
+  <div class="history-filter"><label for="history-target">TARGET</label><select id="history-target">{% for target in targets %}<option value="{{ target }}">{{ target }}</option>{% endfor %}</select></div>
+</section>
+
+{% if entries %}
+<section class="history-overview">
+  <article class="panel history-chart-panel"><div class="panel-title"><div><small>EXPOSURE TREND</small><h2>Open ports and CVEs over time</h2></div><span class="chart-target" id="chart-target-label"></span></div><div class="history-chart-wrap"><canvas id="history-chart"></canvas></div></article>
+  <article class="panel history-summary"><div class="panel-title"><div><small>TRACKING SCOPE</small><h2>History at a glance</h2></div></div><div class="history-summary-stat"><strong>{{ entries|length }}</strong><span>total scans</span></div><div class="history-summary-stat"><strong>{{ targets|length }}</strong><span>targets tracked</span></div><p>Choose a target to focus the trend chart. The timeline below always includes every scan.</p></article>
+</section>
+
+<section class="history-section">
+  <div class="section-head"><div><small>CHRONOLOGICAL TIMELINE</small><h2>All past scans</h2></div><span class="history-count">{{ entries|length }} scan{% if entries|length != 1 %}s{% endif %}</span></div>
+  <div class="history-timeline">
+    {% for item in entries %}
+    <article class="history-entry" data-target="{{ item.target }}">
+      <div class="history-marker"><span></span><time>{{ item.scan_time|replace('T', ' · ') if item.scan_time else 'No timestamp' }}</time></div>
+      <div class="panel history-card">
+        <div class="history-card-head"><div><span class="target-badge">{{ item.target }}</span><h3>{{ item.scan_time|replace('T', ' · ') if item.scan_time else 'Untimestamped scan' }}</h3></div><a class="text-link" href="{{ url_for('report_detail', name=item.name) }}">Open report →</a></div>
+        <div class="history-stats"><span><b>{{ item.hosts_alive }}</b> hosts</span><span><b>{{ item.open_ports }}</b> open ports</span><span><b>{{ item.cves_found }}</b> CVEs</span><span>{{ item.risk_summary }}</span></div>
+        {% if item.diff %}
+        <div class="diff-block">
+          <div class="diff-heading"><span>DIFF FROM PREVIOUS {{ item.target }} SCAN</span><a href="{{ url_for('report_detail', name=item.previous.name) }}">{{ item.previous.scan_time|replace('T', ' · ') }} →</a></div>
+          <div class="diff-grid">
+            <div class="diff-stat positive"><strong>{{ item.diff.new_open_ports|map(attribute='ports')|map('length')|sum }}</strong><span>new open ports</span></div>
+            <div class="diff-stat negative"><strong>{{ item.diff.closed_ports|map(attribute='ports')|map('length')|sum }}</strong><span>closed ports</span></div>
+            <div class="diff-stat warning"><strong>{{ item.diff.new_cves|length }}</strong><span>new CVEs</span></div>
+            <div class="diff-stat neutral"><strong>{{ item.diff.risk_score_changes|selectattr('delta', 'ne', 0)|list|length }}</strong><span>risk scores changed</span></div>
+          </div>
+          <div class="diff-details">
+            {% for group in item.diff.new_open_ports %}<div class="diff-line positive"><b>{{ group.ports|length }} new open port{% if group.ports|length != 1 %}s{% endif %}</b><span>since last scan on <code>{{ group.host }}</code></span><small>{{ group.ports|map(attribute='port')|join(', ') }}</small></div>{% endfor %}
+            {% for group in item.diff.closed_ports %}<div class="diff-line negative"><b>{{ group.ports|length }} closed port{% if group.ports|length != 1 %}s{% endif %}</b><span>since last scan on <code>{{ group.host }}</code></span><small>{{ group.ports|map(attribute='port')|join(', ') }}</small></div>{% endfor %}
+            {% if item.diff.new_cves %}<div class="diff-line warning"><b>{{ item.diff.new_cves|length }} new CVE{% if item.diff.new_cves|length != 1 %}s{% endif %}</b><span>detected in this scan</span><small>{{ item.diff.new_cves|join(', ') }}</small></div>{% endif %}
+            {% for change in item.diff.risk_score_changes if change.delta != 0 %}<div class="diff-line {% if change.delta > 0 %}negative{% else %}positive{% endif %}"><b>{{ change.host }}</b><span>risk score {% if change.delta > 0 %}increased{% else %}decreased{% endif %}</span><small>{{ change.previous }} → {{ change.current }} ({{ '+' if change.delta > 0 else '' }}{{ change.delta }})</small></div>{% endfor %}
+            {% if not item.diff.new_open_ports and not item.diff.closed_ports and not item.diff.new_cves and not (item.diff.risk_score_changes|selectattr('delta', 'ne', 0)|list) %}<div class="diff-empty">No changes detected since the previous scan.</div>{% endif %}
+          </div>
+        </div>
+        {% else %}<div class="baseline-note">Baseline scan for this target — future scans will show changes here.</div>{% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<div class="empty-panel history-empty"><div class="empty-symbol">◌</div><h2>No scan history yet</h2><p>Run or upload a report to start tracking changes over time.</p></div>
+{% endif %}
+{% endblock %}
+{% block page_script %}<script>window.HISTORY_DATA = {{ chart_data|tojson }};</script><script src="{{ url_for('static', filename='js/history.js') }}"></script>{% endblock %}
