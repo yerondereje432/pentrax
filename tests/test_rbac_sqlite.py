@@ -109,6 +109,47 @@ class TestSQLiteAndRBAC(unittest.TestCase):
         logs = self.db.get_audit_logs(limit=10)
         self.assertTrue(any(l["action"] == "LOGIN_SUCCESS" for l in logs))
 
+    def test_session_persists_across_database_instances(self):
+        """Verify that sessions survive process restarts and are read from SQLite."""
+        admin = self.db.get_user_by_username("admin")
+        token = self.db.create_session(admin["id"], duration_hours=2)
+
+        # Simulate fresh process restart by creating a new DatabaseManager pointing to same file
+        new_db_instance = DatabaseManager(db_path=self.temp_db.name)
+        user = new_db_instance.get_user_from_session(token)
+        self.assertIsNotNone(user)
+        self.assertEqual(user["username"], "admin")
+
+    def test_diff_scans_between_two_records(self):
+        """Verify scan diffing accurately identifies new/closed ports and vulnerability deltas."""
+        self.db.save_scan(
+            scan_id="SCAN-DIFF-1",
+            owner_id=None,
+            target="10.0.0.1",
+            status="completed",
+            config={"target": "10.0.0.1"},
+            summary={"results": {"10.0.0.1": {"ports": [
+                {"port": 80, "service": "HTTP", "risk_level": "LOW", "cves": [], "vulns": []}
+            ]}}}
+        )
+        self.db.save_scan(
+            scan_id="SCAN-DIFF-2",
+            owner_id=None,
+            target="10.0.0.1",
+            status="completed",
+            config={"target": "10.0.0.1"},
+            summary={"results": {"10.0.0.1": {"ports": [
+                {"port": 80, "service": "HTTP", "risk_level": "LOW", "cves": [], "vulns": []},
+                {"port": 443, "service": "HTTPS", "risk_level": "HIGH", "cves": [{"cve": "CVE-2024-TEST"}], "vulns": []}
+            ]}}}
+        )
+        diff = self.db.diff_scans("SCAN-DIFF-1", "SCAN-DIFF-2")
+        self.assertIsNotNone(diff)
+        self.assertEqual(len(diff["new_ports"]), 1)
+        self.assertEqual(diff["new_ports"][0]["port"], 443)
+        self.assertEqual(len(diff["new_vulnerabilities"]), 1)
+        self.assertEqual(diff["net_drift_summary"]["ports_delta"], 1)
+
 
 class TestWebAPIAuthAndRBAC(unittest.TestCase):
     """Integration tests for web authentication and RBAC endpoints."""
@@ -144,13 +185,33 @@ class TestWebAPIAuthAndRBAC(unittest.TestCase):
         res_me_after = self.client.get("/api/auth/me", headers={"X-Session-Token": token})
         self.assertEqual(res_me_after.status_code, 401)
 
+    def test_rate_limiting_login_lockout(self):
+        """Verify rate limiting blocks brute force after 5 failed attempts."""
+        from web.rate_limiter import rate_limiter
+        test_ip = "192.0.2.42"
+        rate_limiter.reset(test_ip)
+
+        for _ in range(5):
+            rate_limiter.record_failure(test_ip)
+
+        self.assertFalse(rate_limiter.is_allowed(test_ip))
+        rate_limiter.reset(test_ip)
+        self.assertTrue(rate_limiter.is_allowed(test_ip))
+
+    def test_security_headers_present_on_responses(self):
+        """Verify CSP, X-Frame-Options, nosniff headers are returned on all endpoints."""
+        res = self.client.get("/")
+        self.assertIn("Content-Security-Policy", res.headers)
+        self.assertEqual(res.headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(res.headers.get("X-Content-Type-Options"), "nosniff")
+
     def test_viewer_role_cannot_start_scan(self):
         # Create a viewer user in DB
         from web.app import db_manager
-        db_manager.create_user("test_viewer", "viewer123", role="viewer")
+        db_manager.create_user("test_viewer_role", "viewer123", role="viewer")
 
         # Login as viewer
-        res = self.client.post("/api/auth/login", json={"username": "test_viewer", "password": "viewer123"})
+        res = self.client.post("/api/auth/login", json={"username": "test_viewer_role", "password": "viewer123"})
         self.assertEqual(res.status_code, 200)
         token = res.json()["token"]
 

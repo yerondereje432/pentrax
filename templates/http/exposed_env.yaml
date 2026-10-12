@@ -1,0 +1,19 @@
+id: PENTRAX-HTTP-002
+name: Exposed Environment Secret File (.env)
+severity: CRITICAL
+category: DAST
+http:
+  method: GET
+  paths:
+    - /.env
+    - /.env.local
+    - /.env.production
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words: ["DB_PASSWORD", "SECRET_KEY", "AWS_ACCESS_KEY", "DATABASE_URL"]
+      condition: or
+remediation: Ensure environment files are stored outside the public document root and restrict access in Nginx/Apache.
+sla: 48 Hours
+

@@ -1,0 +1,17 @@
+id: PENTRAX-NET-002
+name: Unauthenticated Memcached Server Exposed
+severity: CRITICAL
+cvss: 9.8
+network:
+  - port: 11211
+    protocol: tcp
+    payload: "stats\r\n"
+    matchers:
+      - type: word
+        words:
+          - "STAT pid"
+          - "STAT uptime"
+          - "STAT version"
+remediation: Bind Memcached to localhost (127.0.0.1) or implement SASL authentication and firewall external UDP/TCP 11211.
+sla: 7 Days
+

@@ -19,6 +19,24 @@ from starlette.routing import Route, WebSocketRoute, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Enforces hardening security headers (CSP, X-Frame-Options, X-Content-Type-Options, etc.)."""
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' cdn.tailwindcss.com cdnjs.cloudflare.com unpkg.com; "
+            "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self' ws: wss:; "
+            "font-src 'self' cdnjs.cloudflare.com;"
+        )
+        return response
+
 class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     """Enforces API Key verification if PENTRAX_API_KEY environment variable is set."""
     async def dispatch(self, request, call_next):
@@ -50,8 +68,14 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
 ROOT_DIR = Path(__file__).resolve().parent.parent
 from pentrax import *
 import pentrax as ys
+from scanner.reporting import generate_executive_summary, generate_markdown as generate_tech_markdown
+from scanner.recon import PassiveRecon
+from scanner.threat_intel import threat_intel
+from scanner.tls_audit import tls_auditor
+from scanner.vuln_feed import CVEFeedUpdater
 from web.manager import scan_manager, ScanInstance
 from web.db import db_manager
+from web.rate_limiter import rate_limiter
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -103,7 +127,15 @@ async def get_system_capabilities(request):
 
 
 async def api_login(request):
-    """Authenticate user with username and password, issuing session token."""
+    """Authenticate user with username and password, issuing session token with rate limit protection."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    if not rate_limiter.is_allowed(client_ip):
+        return JSONResponse(
+            {"error": "Too many failed attempts. Temporary lockout in effect (try again in 15 minutes)."},
+            status_code=429,
+            headers={"Retry-After": "900"}
+        )
+
     try:
         body = await request.json()
     except Exception:
@@ -112,10 +144,12 @@ async def api_login(request):
     password = body.get("password", "")
     user = db_manager.authenticate_user(username, password)
     if not user:
+        rate_limiter.record_failure(client_ip)
         return JSONResponse({"error": "Invalid username or password"}, status_code=401)
-    
-    token = db_manager.create_session(user)
-    db_manager.log_audit(user["id"], "LOGIN", ip=request.client.host if request.client else None)
+
+    rate_limiter.reset(client_ip)
+    token = db_manager.create_session(user, ip=client_ip)
+    db_manager.log_audit(user["id"], "LOGIN", ip=client_ip)
     response = JSONResponse({
         "message": "Authentication successful",
         "user": user,
@@ -147,9 +181,30 @@ async def api_current_user(request):
 
 
 async def list_scans(request):
-    """List scans filtered by user role (Admin sees all; Operator sees only own)."""
+    """List scans filtered by user role (Admin sees all; Operator sees only own), with optional pagination."""
     current_user = get_current_user(request)
+    params = request.query_params
+    page_param = params.get("page")
+    if page_param:
+        try:
+            page = int(page_param)
+            per_page = int(params.get("per_page", 25))
+            sort = params.get("sort", "created_at")
+            order = params.get("order", "desc")
+            return JSONResponse(db_manager.list_scans(user=current_user, page=page, per_page=per_page, sort=sort, order=order))
+        except ValueError:
+            pass
     return JSONResponse(scan_manager.list_scans(user=current_user))
+
+
+async def diff_scans_endpoint(request):
+    """Compute network drift, port deltas, and vulnerability changes between two scans."""
+    scan_id_a = request.path_params.get("scan_id")
+    scan_id_b = request.path_params.get("other_scan_id")
+    diff_data = db_manager.diff_scans(scan_id_a, scan_id_b)
+    if not diff_data:
+        return JSONResponse({"error": "One or both scans not found"}, status_code=404)
+    return JSONResponse(diff_data)
 
 
 async def start_scan(request):
@@ -290,6 +345,20 @@ async def export_scan(request):
                 media_type="text/markdown",
                 headers={"Content-Disposition": f'attachment; filename="README_{scan_id}.md"'},
             )
+        elif export_format in ("executive", "exec"):
+            exec_text = generate_executive_summary(result_data)
+            return Response(
+                content=exec_text.encode("utf-8"),
+                media_type="text/markdown",
+                headers={"Content-Disposition": f'attachment; filename="Executive_Summary_{scan_id}.md"'},
+            )
+        elif export_format in ("technical", "tech"):
+            tech_text = generate_tech_markdown(result_data)
+            return Response(
+                content=tech_text.encode("utf-8"),
+                media_type="text/markdown",
+                headers={"Content-Disposition": f'attachment; filename="Technical_Report_{scan_id}.md"'},
+            )
         elif export_format == "html":
             ys.export_html(result_data, tmp_path)
             with open(tmp_path, "rb") as f:
@@ -307,6 +376,69 @@ async def export_scan(request):
                 os.unlink(tmp_path)
             except OSError:
                 pass
+
+
+async def api_passive_recon(request):
+    """Run passive OSINT reconnaissance on domain or IP."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    domain = body.get("domain", "").strip()
+    if not domain:
+        return JSONResponse({"error": "Domain or target is required"}, status_code=400)
+    recon = PassiveRecon()
+    res = await recon.run(domain)
+    return JSONResponse(res.to_dict())
+
+
+async def api_threat_intel(request):
+    """Query threat intelligence reputation and Tor exit status for an IP."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    ip_addr = body.get("ip", "").strip()
+    if not ip_addr:
+        return JSONResponse({"error": "IP address is required"}, status_code=400)
+    profile = await threat_intel.check(ip_addr)
+    return JSONResponse(profile.to_dict())
+
+
+async def api_tls_audit(request):
+    """Perform cryptographic TLS certificate and cipher suite audit."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    host = body.get("host", "").strip()
+    port = int(body.get("port", 443))
+    if not host:
+        return JSONResponse({"error": "Host is required"}, status_code=400)
+    report = tls_auditor.audit(host, port)
+    return JSONResponse(report.to_dict())
+
+
+async def api_cve_sync(request):
+    """Trigger background or on-demand CVE catalog synchronization."""
+    current_user = get_current_user(request)
+    if current_user and current_user.get("role") != "admin":
+        return JSONResponse({"error": "Forbidden: Admin role required for CVE sync"}, status_code=403)
+    updater = CVEFeedUpdater()
+    count = updater.sync(days_back=7)
+    stats = updater.get_stats()
+    return JSONResponse({"message": f"Synced {count} CVE records", "stats": stats})
+
+
+async def api_cve_stats(request):
+    """Retrieve local vulnerability catalog statistics."""
+    updater = CVEFeedUpdater()
+    return JSONResponse(updater.get_stats())
+
+
+async def api_dashboard_stats(request):
+    """Retrieve aggregate security posture metrics for the dashboard command center."""
+    return JSONResponse(db_manager.get_dashboard_stats())
 
 
 async def scan_websocket(websocket: WebSocket):
@@ -378,6 +510,13 @@ routes = [
     Route("/api/scans/{scan_id}/stop", endpoint=stop_scan, methods=["POST"]),
     Route("/api/scans/{scan_id}", endpoint=delete_scan, methods=["DELETE"]),
     Route("/api/scans/{scan_id}/export/{format}", endpoint=export_scan, methods=["GET"]),
+    Route("/api/scans/{scan_id}/diff/{other_scan_id}", endpoint=diff_scans_endpoint, methods=["GET"]),
+    Route("/api/recon", endpoint=api_passive_recon, methods=["POST"]),
+    Route("/api/threat-intel", endpoint=api_threat_intel, methods=["POST"]),
+    Route("/api/tls-audit", endpoint=api_tls_audit, methods=["POST"]),
+    Route("/api/admin/cve-sync", endpoint=api_cve_sync, methods=["POST"]),
+    Route("/api/admin/cve-catalog/stats", endpoint=api_cve_stats, methods=["GET"]),
+    Route("/api/dashboard/stats", endpoint=api_dashboard_stats, methods=["GET"]),
     WebSocketRoute("/ws/scans/{scan_id}", endpoint=scan_websocket),
     Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),
 ]
@@ -389,6 +528,7 @@ middleware = [
         allow_methods=["*"],
         allow_headers=["*"],
     ),
+    Middleware(SecurityHeadersMiddleware),
     Middleware(APIKeyAuthMiddleware),
 ]
 

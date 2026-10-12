@@ -327,6 +327,22 @@ class TestWebAPI(unittest.TestCase):
         finally:
             os.environ.pop("PENTRAX_API_KEY", None)
 
+    def test_dashboard_stats_endpoint(self):
+        """GET /api/dashboard/stats returns aggregated posture score and telemetry."""
+        resp = self.client.get("/api/dashboard/stats")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("posture_score", data)
+        self.assertIn("posture_grade", data)
+        self.assertIn("vulns_by_severity", data)
+        self.assertIn("top_services", data)
+        self.assertIn("total_scans", data)
+        self.assertIn("total_hosts", data)
+        self.assertIn("total_ports", data)
+        self.assertIn("total_vulns", data)
+        self.assertIsInstance(data["vulns_by_severity"], dict)
+        self.assertIsInstance(data["top_services"], list)
+
 
 if __name__ == "__main__":
     unittest.main()

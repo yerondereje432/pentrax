@@ -1,0 +1,26 @@
+services:
+  pentrax:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pentrax_engine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./templates:/app/templates
+      - ./scans:/app/scans
+      - ./web:/app/web
+      - ./pentrax.py:/app/pentrax.py
+    environment:
+      - PENTRAX_API_KEY=${PENTRAX_API_KEY:-}
+      - PENTRAX_ADMIN_PASSWORD=${PENTRAX_ADMIN_PASSWORD:-pentrax1337}
+      - PENTRAX_WEBHOOK_URL=${PENTRAX_WEBHOOK_URL:-}
+      - SHODAN_API_KEY=${SHODAN_API_KEY:-}
+      - VT_API_KEY=${VT_API_KEY:-}
+      - NVD_API_KEY=${NVD_API_KEY:-}
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+

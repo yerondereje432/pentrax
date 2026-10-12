@@ -32,6 +32,7 @@
   </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap');
     body { font-family: 'Inter', sans-serif; background-color: #07090e; }
@@ -70,9 +71,9 @@
         <div>
           <div class="flex items-center space-x-2">
             <span class="text-2xl font-black tracking-wider text-white">PENTRAX</span>
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-pentrax-darkred text-pentrax-red font-mono font-bold border border-pentrax-red/40">v8.0</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-pentrax-darkred text-pentrax-red font-mono font-bold border border-pentrax-red/40">v10.0</span>
           </div>
-          <p class="text-[10px] text-pentrax-red font-bold tracking-widest uppercase">WEB VULNERABILITY ASSESSMENT</p>
+          <p class="text-[10px] text-pentrax-red font-bold tracking-widest uppercase">ENTERPRISE RED TEAM & ATTACK SURFACE</p>
         </div>
       </div>
     </div>
@@ -107,6 +108,161 @@
 
   <!-- MAIN CONTAINER -->
   <main class="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+
+    <!-- EXECUTIVE COMMAND CENTER & GLOBAL THREAT POSTURE -->
+    <section id="command-center-overview" class="bg-gradient-to-br from-pentrax-900 via-pentrax-850 to-pentrax-900 border border-pentrax-700/80 rounded-2xl p-6 shadow-2xl relative overflow-hidden space-y-6">
+      <!-- Top Glowing Red Accent Line -->
+      <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-600 via-pentrax-red to-cyan-500"></div>
+
+      <!-- Command Center Header: Posture Score & Mission Presets -->
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-pentrax-750">
+        <div class="flex items-center space-x-4">
+          <!-- Posture Score Circular Indicator -->
+          <div class="relative flex items-center justify-center w-20 h-20 rounded-2xl bg-pentrax-950 border-2 border-pentrax-red/40 shadow-lg glow-red-sm flex-shrink-0">
+            <div class="text-center">
+              <span id="posture-score-num" class="text-2xl font-black font-mono text-white block leading-tight">95</span>
+              <span id="posture-grade-letter" class="text-[10px] font-mono font-bold uppercase text-emerald-400 tracking-wider">GRADE A</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center space-x-2.5">
+              <h2 class="text-lg font-black tracking-wide text-white">RED TEAM OPERATIONS & THREAT POSTURE</h2>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>SYSTEM ARMED</span>
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1 max-w-xl">
+              Real-time attack surface intelligence, continuous vulnerability posture, and automated compliance mapping across external perimeters.
+            </p>
+          </div>
+        </div>
+
+        <!-- Quick Mission Launch Presets -->
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-[11px] font-mono uppercase text-slate-400 font-bold mr-1 hidden sm:inline">Mission Presets:</span>
+          <button onclick="launchQuickPreset('fast')" class="px-3 py-1.5 bg-pentrax-800 hover:bg-pentrax-700 text-slate-200 border border-pentrax-700 hover:border-cyan-400 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-bolt text-cyan-400"></i>
+            <span>Quick Recon</span>
+          </button>
+          <button onclick="launchQuickPreset('full')" class="px-3 py-1.5 bg-pentrax-800 hover:bg-pentrax-700 text-slate-200 border border-pentrax-700 hover:border-pentrax-red rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-shield-virus text-pentrax-red"></i>
+            <span>Full DAST Audit</span>
+          </button>
+          <button onclick="launchQuickPreset('stealth')" class="px-3 py-1.5 bg-pentrax-800 hover:bg-pentrax-700 text-slate-200 border border-pentrax-700 hover:border-purple-400 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-user-ninja text-purple-400"></i>
+            <span>Stealth Red Team</span>
+          </button>
+          <button onclick="launchQuickPreset('api')" class="px-3 py-1.5 bg-pentrax-800 hover:bg-pentrax-700 text-slate-200 border border-pentrax-700 hover:border-amber-400 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-cube text-amber-400"></i>
+            <span>API Hunter</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI Executive Telemetry Cards -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-pentrax-950/80 p-4 rounded-xl border border-pentrax-750 relative overflow-hidden">
+          <div class="flex justify-between items-start">
+            <span class="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Perimeter Scope</span>
+            <i class="fa-solid fa-server text-cyan-400/60 text-sm"></i>
+          </div>
+          <div class="mt-2 flex items-baseline space-x-2">
+            <span id="kpi-total-hosts" class="text-2xl font-black font-mono text-cyan-400">0</span>
+            <span class="text-[10px] text-slate-500">Live Hosts Mapped</span>
+          </div>
+        </div>
+
+        <div class="bg-pentrax-950/80 p-4 rounded-xl border border-pentrax-750 relative overflow-hidden">
+          <div class="flex justify-between items-start">
+            <span class="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Exposed Surface</span>
+            <i class="fa-solid fa-network-wired text-emerald-400/60 text-sm"></i>
+          </div>
+          <div class="mt-2 flex items-baseline space-x-2">
+            <span id="kpi-open-ports" class="text-2xl font-black font-mono text-emerald-400">0</span>
+            <span class="text-[10px] text-slate-500">Open Service Endpoints</span>
+          </div>
+        </div>
+
+        <div class="bg-pentrax-950/80 p-4 rounded-xl border border-pentrax-750 relative overflow-hidden">
+          <div class="flex justify-between items-start">
+            <span class="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Critical Flaws</span>
+            <i class="fa-solid fa-radiation text-pentrax-red/80 text-sm"></i>
+          </div>
+          <div class="mt-2 flex items-baseline space-x-2">
+            <span id="kpi-crit-vulns" class="text-2xl font-black font-mono text-pentrax-red">0</span>
+            <span class="text-[10px] text-slate-500">48h SLA Priority</span>
+          </div>
+        </div>
+
+        <div class="bg-pentrax-950/80 p-4 rounded-xl border border-pentrax-750 relative overflow-hidden">
+          <div class="flex justify-between items-start">
+            <span class="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Security Audits</span>
+            <i class="fa-solid fa-list-check text-purple-400/60 text-sm"></i>
+          </div>
+          <div class="mt-2 flex items-baseline space-x-2">
+            <span id="kpi-total-scans" class="text-2xl font-black font-mono text-purple-400">0</span>
+            <span class="text-[10px] text-slate-500">Dossiers Generated</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Analytics Deck: Charts & Compliance SLA -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
+        <!-- Chart 1: Vulnerability Severity Spectrum -->
+        <div class="bg-pentrax-950/60 p-4 rounded-xl border border-pentrax-750 flex flex-col">
+          <h4 class="text-xs font-bold text-slate-200 uppercase font-mono mb-3 flex items-center justify-between">
+            <span><i class="fa-solid fa-chart-pie mr-1.5 text-pentrax-red"></i> Threat Severity Distribution</span>
+            <span id="chart-vuln-total" class="text-[10px] text-slate-400 font-normal">0 findings</span>
+          </h4>
+          <div class="relative flex-1 flex items-center justify-center min-h-[170px]">
+            <canvas id="chart-severity-doughnut" class="max-h-[160px]"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 2: Top Exposed Services & Attack Surface -->
+        <div class="bg-pentrax-950/60 p-4 rounded-xl border border-pentrax-750 flex flex-col">
+          <h4 class="text-xs font-bold text-slate-200 uppercase font-mono mb-3 flex items-center justify-between">
+            <span><i class="fa-solid fa-chart-bar mr-1.5 text-cyan-400"></i> Service Exposure Spectrum</span>
+            <span class="text-[10px] text-slate-400 font-normal">Top Entry Points</span>
+          </h4>
+          <div class="relative flex-1 flex items-center justify-center min-h-[170px]">
+            <canvas id="chart-services-bar" class="max-h-[160px]"></canvas>
+          </div>
+        </div>
+
+        <!-- Card 3: SLA Compliance Matrix & Target Radar -->
+        <div class="bg-pentrax-950/60 p-4 rounded-xl border border-pentrax-750 flex flex-col justify-between space-y-4">
+          <div>
+            <h4 class="text-xs font-bold text-slate-200 uppercase font-mono mb-3 flex items-center justify-between">
+              <span><i class="fa-solid fa-stopwatch mr-1.5 text-amber-400"></i> Remediation SLA Matrix</span>
+              <span class="text-[10px] font-bold text-emerald-400 font-mono bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30">100% On-Track</span>
+            </h4>
+            <div class="space-y-2 text-xs font-mono">
+              <div class="flex justify-between items-center p-2 rounded bg-pentrax-900 border border-pentrax-800">
+                <span class="text-pentrax-red font-bold">🔴 Critical Vulnerabilities</span>
+                <span class="text-slate-300 font-semibold">SLA: 48 Hours</span>
+              </div>
+              <div class="flex justify-between items-center p-2 rounded bg-pentrax-900 border border-pentrax-800">
+                <span class="text-orange-400 font-bold">🟠 High Severity Flaws</span>
+                <span class="text-slate-300 font-semibold">SLA: 14 Days</span>
+              </div>
+              <div class="flex justify-between items-center p-2 rounded bg-pentrax-900 border border-pentrax-800">
+                <span class="text-amber-300 font-bold">🟡 Medium Risk Issues</span>
+                <span class="text-slate-300 font-semibold">SLA: 30 Days</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Compliance Frameworks Footnote -->
+          <div class="pt-3 border-t border-pentrax-800 text-[10px] text-slate-500 font-mono flex items-center justify-between">
+            <span>Frameworks: CIS Controls · NIST CSF · PCI 11.2</span>
+            <span class="text-cyan-400 font-bold">CVSS v3.1 + EPSS</span>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- ACTIVE SCAN HUD / REAL-TIME STATUS -->
     <section id="scan-hud" class="bg-pentrax-900 border border-pentrax-700 rounded-xl p-5 shadow-2xl relative overflow-hidden hidden">
@@ -207,6 +363,10 @@
             <i class="fa-solid fa-terminal text-cyan-400"></i>
             <span>Live Audit Console</span>
           </button>
+          <button onclick="switchTab('tab-recon')" id="btn-tab-recon" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-satellite-dish text-emerald-400"></i>
+            <span>Passive Recon</span>
+          </button>
           <button onclick="switchTab('tab-history')" id="btn-tab-history" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1.5 transition">
             <i class="fa-solid fa-clock-rotate-left text-amber-400"></i>
             <span>Assessment History</span>
@@ -216,6 +376,10 @@
         <!-- Report Exporters -->
         <div class="flex items-center space-x-2">
           <span class="text-xs text-slate-400 mr-1 hidden sm:inline">Export Dossier:</span>
+          <button onclick="exportReport('executive')" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-red-500 text-xs rounded text-rose-300 flex items-center space-x-1 transition font-bold" title="CISO Executive Summary Markdown">
+            <i class="fa-solid fa-file-shield text-pentrax-red"></i>
+            <span>Executive</span>
+          </button>
           <button onclick="exportReport('md')" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-cyan-400 text-xs rounded text-slate-200 flex items-center space-x-1 transition font-bold" title="Download README.md Report">
             <i class="fa-brands fa-markdown text-cyan-400"></i>
             <span>README.md</span>
@@ -311,11 +475,89 @@
         </div>
       </div>
 
-      <!-- TAB 5: SCAN HISTORY -->
+      <!-- TAB 5: PASSIVE RECON (OSINT) -->
+      <div id="tab-recon" class="tab-panel p-6 flex-1 hidden space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-pentrax-850 p-4 rounded-xl border border-pentrax-700">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+              <i class="fa-solid fa-satellite-dish text-emerald-400"></i>
+              <span>Passive OSINT Reconnaissance & Perimeter Intelligence</span>
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">Zero packets sent to target. Enumerates Certificate Transparency logs (crt.sh), DNS, RDAP, Tor exit status, and TLS ciphers.</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <input type="text" id="recon-domain-input" placeholder="e.g. scanme.nmap.org" class="px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-400 w-64 font-mono">
+            <button onclick="executePassiveRecon()" id="btn-recon-run" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1.5 shadow">
+              <i class="fa-solid fa-bolt"></i>
+              <span>Scan OSINT</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Recon Results Container -->
+        <div id="recon-results-card" class="space-y-6 hidden">
+          <!-- Summary Metric Cards -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-pentrax-850 p-4 rounded-xl border border-pentrax-700">
+              <span class="text-[10px] text-slate-400 font-mono uppercase tracking-wider block">Target IP</span>
+              <span id="recon-res-ip" class="text-lg font-black font-mono text-emerald-400">-</span>
+            </div>
+            <div class="bg-pentrax-850 p-4 rounded-xl border border-pentrax-700">
+              <span class="text-[10px] text-slate-400 font-mono uppercase tracking-wider block">Discovered Subdomains</span>
+              <span id="recon-res-sub-count" class="text-lg font-black font-mono text-cyan-400">0</span>
+            </div>
+            <div class="bg-pentrax-850 p-4 rounded-xl border border-pentrax-700">
+              <span class="text-[10px] text-slate-400 font-mono uppercase tracking-wider block">Threat Level</span>
+              <span id="recon-res-threat" class="text-lg font-black font-mono text-emerald-400">CLEAN</span>
+            </div>
+            <div class="bg-pentrax-850 p-4 rounded-xl border border-pentrax-700">
+              <span class="text-[10px] text-slate-400 font-mono uppercase tracking-wider block">TLS Grade</span>
+              <span id="recon-res-tls" class="text-lg font-black font-mono text-cyan-400">A</span>
+            </div>
+          </div>
+
+          <!-- Subdomains & SANs Card -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-pentrax-850 p-4 rounded-xl border border-pentrax-700 flex flex-col">
+              <div class="flex justify-between items-center mb-3">
+                <h4 class="text-xs font-bold text-slate-200 uppercase font-mono"><i class="fa-solid fa-sitemap mr-1.5 text-cyan-400"></i> Discovered Subdomains & SANs</h4>
+                <span id="recon-subdomains-badge" class="px-2 py-0.5 rounded text-[10px] bg-pentrax-950 text-cyan-400 font-mono font-bold">0 found</span>
+              </div>
+              <div id="recon-subdomains-list" class="flex-1 max-h-64 overflow-y-auto space-y-1 font-mono text-xs text-slate-300 p-2 bg-pentrax-950 rounded-lg border border-pentrax-750">
+                <div class="text-slate-500 italic">No subdomains discovered.</div>
+              </div>
+            </div>
+
+            <!-- DNS & WHOIS Info -->
+            <div class="bg-pentrax-850 p-4 rounded-xl border border-pentrax-700 space-y-4">
+              <div>
+                <h4 class="text-xs font-bold text-slate-200 uppercase font-mono mb-2"><i class="fa-solid fa-network-wired mr-1.5 text-purple-400"></i> DNS Records</h4>
+                <div id="recon-dns-list" class="space-y-1 font-mono text-xs bg-pentrax-950 p-2.5 rounded-lg border border-pentrax-750 text-slate-300 max-h-28 overflow-y-auto">
+                  <div class="text-slate-500 italic">No DNS records.</div>
+                </div>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-slate-200 uppercase font-mono mb-2"><i class="fa-solid fa-id-card mr-1.5 text-amber-400"></i> Domain Registration / RDAP</h4>
+                <div id="recon-whois-details" class="space-y-1 font-mono text-xs bg-pentrax-950 p-2.5 rounded-lg border border-pentrax-750 text-slate-300 max-h-28 overflow-y-auto">
+                  <div class="text-slate-500 italic">No RDAP registry details.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 6: SCAN HISTORY -->
       <div id="tab-history" class="tab-panel p-6 flex-1 hidden">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-sm font-bold text-slate-300">Saved Assessment History</h3>
-          <button onclick="loadScanHistory()" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 rounded text-xs text-slate-300">
+          <div class="flex items-center space-x-3">
+            <h3 class="text-sm font-bold text-slate-300">Saved Assessment History</h3>
+            <button onclick="openDiffModal()" class="px-2.5 py-1 bg-purple-950 hover:bg-purple-900 border border-purple-500/40 text-purple-300 rounded text-xs font-bold transition flex items-center space-x-1">
+              <i class="fa-solid fa-code-compare"></i>
+              <span>Compare Drift / Diff</span>
+            </button>
+          </div>
+          <button onclick="loadScanHistory(1)" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 rounded text-xs text-slate-300">
             <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh
           </button>
         </div>
@@ -337,6 +579,21 @@
               <!-- Loaded dynamically -->
             </tbody>
           </table>
+        </div>
+        <!-- Pagination Controls -->
+        <div class="flex justify-between items-center mt-4 px-2 text-xs text-slate-400">
+          <div>
+            <span id="history-total-count">Showing assessments</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button id="btn-history-prev" onclick="changeHistoryPage(-1)" class="px-3 py-1 bg-pentrax-850 hover:bg-pentrax-800 rounded border border-pentrax-700 disabled:opacity-40" disabled>
+              <i class="fa-solid fa-chevron-left mr-1"></i> Prev
+            </button>
+            <span id="history-page-indicator" class="font-mono text-slate-300 font-bold">Page 1</span>
+            <button id="btn-history-next" onclick="changeHistoryPage(1)" class="px-3 py-1 bg-pentrax-850 hover:bg-pentrax-800 rounded border border-pentrax-700 disabled:opacity-40" disabled>
+              Next <i class="fa-solid fa-chevron-right ml-1"></i>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -525,6 +782,87 @@
     </div>
   </div>
 
+  <!-- SCAN DIFF / NETWORK DRIFT MODAL -->
+  <div id="modal-diff" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-pentrax-900 border border-pentrax-700 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="p-5 border-b border-pentrax-700 flex justify-between items-center bg-pentrax-850">
+        <div class="flex items-center space-x-2.5">
+          <i class="fa-solid fa-code-compare text-purple-400 text-lg"></i>
+          <div>
+            <h3 class="text-sm font-black text-white">Network Drift & Scan Comparison</h3>
+            <p class="text-[11px] text-slate-400">Compare two scans to discover newly exposed ports, closed ports, and vulnerability deltas.</p>
+          </div>
+        </div>
+        <button onclick="closeDiffModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <div class="p-6 space-y-5 overflow-y-auto flex-1">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Base Scan (Scan A):</label>
+            <select id="diff-select-a" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 font-mono"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Comparison Scan (Scan B):</label>
+            <select id="diff-select-b" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 font-mono"></select>
+          </div>
+        </div>
+
+        <div class="flex justify-end">
+          <button onclick="computeScanDiff()" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1.5 shadow">
+            <i class="fa-solid fa-magnifying-glass-chart"></i>
+            <span>Calculate Drift</span>
+          </button>
+        </div>
+
+        <div id="diff-results-container" class="space-y-4 hidden">
+          <!-- Drift Badges -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="p-3 bg-emerald-950/40 border border-emerald-500/40 rounded-xl text-center">
+              <span class="text-[10px] text-emerald-400 font-mono uppercase font-bold block">New Open Ports</span>
+              <span id="diff-badge-ports-added" class="text-xl font-black text-emerald-400 font-mono">+0</span>
+            </div>
+            <div class="p-3 bg-red-950/40 border border-red-500/40 rounded-xl text-center">
+              <span class="text-[10px] text-red-400 font-mono uppercase font-bold block">Closed Ports</span>
+              <span id="diff-badge-ports-removed" class="text-xl font-black text-red-400 font-mono">-0</span>
+            </div>
+            <div class="p-3 bg-rose-950/40 border border-rose-500/40 rounded-xl text-center">
+              <span class="text-[10px] text-rose-400 font-mono uppercase font-bold block">New Vulns</span>
+              <span id="diff-badge-vulns-added" class="text-xl font-black text-rose-400 font-mono">+0</span>
+            </div>
+            <div class="p-3 bg-cyan-950/40 border border-cyan-500/40 rounded-xl text-center">
+              <span class="text-[10px] text-cyan-400 font-mono uppercase font-bold block">Resolved Vulns</span>
+              <span id="diff-badge-vulns-resolved" class="text-xl font-black text-cyan-400 font-mono">-0</span>
+            </div>
+          </div>
+
+          <!-- Port Changes Table -->
+          <div>
+            <h4 class="text-xs font-bold text-slate-300 uppercase font-mono mb-2">Port Deltas</h4>
+            <div class="overflow-x-auto rounded-lg border border-pentrax-700 bg-pentrax-950">
+              <table class="w-full text-left text-xs" id="diff-ports-table">
+                <thead class="bg-pentrax-850 text-slate-400 border-b border-pentrax-700 font-mono">
+                  <tr><th class="p-2.5">Change</th><th class="p-2.5">Host</th><th class="p-2.5">Port</th><th class="p-2.5">Protocol</th><th class="p-2.5">Service</th></tr>
+                </thead>
+                <tbody id="diff-ports-tbody" class="divide-y divide-pentrax-750"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Vulnerability Changes -->
+          <div>
+            <h4 class="text-xs font-bold text-slate-300 uppercase font-mono mb-2">Vulnerability Deltas</h4>
+            <div id="diff-vulns-list" class="space-y-2 text-xs"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-pentrax-700 flex justify-end bg-pentrax-850">
+        <button onclick="closeDiffModal()" class="px-4 py-1.5 bg-pentrax-800 hover:bg-pentrax-700 text-slate-300 rounded-lg text-xs font-semibold">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- JAVASCRIPT APPLICATION LOGIC -->
   <script>
     let activeScanId = null;
@@ -533,11 +871,14 @@
     let systemCaps = null;
     let attackNetwork = null;
     let currentUser = null;
+    let severityChartInstance = null;
+    let servicesChartInstance = null;
 
     document.addEventListener('DOMContentLoaded', async () => {
       await checkAuthStatus();
       await fetchSystemCapabilities();
       await loadScanHistory();
+      await loadDashboardStats();
     });
 
     async function checkAuthStatus() {
@@ -791,6 +1132,7 @@
         renderVulnsCards(ev.export_data);
         renderAttackGraph();
         loadScanHistory();
+        loadDashboardStats();
       } else if (ev.type === 'status_change') {
         if (ev.status === 'stopped') {
           document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>STOPPED</span>`;
@@ -1077,12 +1419,35 @@
       attackNetwork = new vis.Network(container, data, options);
     }
 
-    async function loadScanHistory() {
+    let currentHistoryPage = 1;
+    let totalHistoryPages = 1;
+    let cachedScanList = [];
+
+    async function loadScanHistory(page = 1) {
+      currentHistoryPage = page;
       try {
-        const res = await fetch('/api/scans');
-        const list = await res.json();
+        const res = await fetch(`/api/scans?page=${page}&per_page=10`);
+        const data = await res.json();
         const tbody = document.getElementById('history-table-body');
         
+        let list = [];
+        if (Array.isArray(data)) {
+          list = data;
+          cachedScanList = list;
+          totalHistoryPages = 1;
+        } else if (data && data.items) {
+          list = data.items;
+          cachedScanList = list;
+          currentHistoryPage = data.page || 1;
+          totalHistoryPages = data.pages || 1;
+          const totalCount = data.total || list.length;
+          document.getElementById('history-total-count').innerText = `Total ${totalCount} assessments recorded`;
+        }
+        
+        document.getElementById('history-page-indicator').innerText = `Page ${currentHistoryPage} of ${totalHistoryPages}`;
+        document.getElementById('btn-history-prev').disabled = currentHistoryPage <= 1;
+        document.getElementById('btn-history-next').disabled = currentHistoryPage >= totalHistoryPages;
+
         if (!list || list.length === 0) {
           tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">No previous assessments recorded.</td></tr>`;
           return;
@@ -1106,8 +1471,9 @@
               <td class="p-3 font-mono text-emerald-400 font-bold">${item.live_hosts_count || 0}</td>
               <td class="p-3 font-mono text-cyan-400 font-bold">${item.open_ports_count || 0}</td>
               <td class="p-3 text-slate-400 text-[11px]">${new Date(item.created_at).toLocaleString()}</td>
-              <td class="p-3 text-right space-x-2">
-                <button onclick="viewScanHistoryItem('${item.id}')" class="px-2.5 py-1 bg-pentrax-800 hover:bg-pentrax-red rounded text-white text-xs font-bold transition" title="Load this scan">View</button>
+              <td class="p-3 text-right space-x-1.5 whitespace-nowrap">
+                <button onclick="viewScanHistoryItem('${item.id}')" class="px-2 py-1 bg-pentrax-800 hover:bg-pentrax-red rounded text-white text-xs font-bold transition" title="Load this scan">View</button>
+                <button onclick="openDiffModal('${item.id}')" class="px-2 py-1 bg-purple-950 hover:bg-purple-900 text-purple-300 rounded text-xs font-bold border border-purple-500/30" title="Compare Drift"><i class="fa-solid fa-code-compare mr-1"></i>Diff</button>
                 <button onclick="deleteScanHistoryItem('${item.id}')" class="px-2 py-1 bg-pentrax-950 hover:bg-red-950 text-red-400 rounded text-xs" title="Delete scan"><i class="fa-solid fa-trash"></i></button>
               </td>
             </tr>
@@ -1116,6 +1482,13 @@
         tbody.innerHTML = html;
       } catch (err) {
         console.error('Failed to load scan history:', err);
+      }
+    }
+
+    function changeHistoryPage(delta) {
+      const targetPage = currentHistoryPage + delta;
+      if (targetPage >= 1 && targetPage <= totalHistoryPages) {
+        loadScanHistory(targetPage);
       }
     }
 
@@ -1146,7 +1519,173 @@
         alert(data.error || 'Failed to delete scan: permission denied');
         return;
       }
-      await loadScanHistory();
+      await loadScanHistory(currentHistoryPage);
+    }
+
+    function openDiffModal(preselectedId = null) {
+      const selectA = document.getElementById('diff-select-a');
+      const selectB = document.getElementById('diff-select-b');
+      selectA.innerHTML = '';
+      selectB.innerHTML = '';
+
+      cachedScanList.forEach((s, idx) => {
+        const optA = document.createElement('option');
+        optA.value = s.id;
+        optA.text = `${s.id} — ${s.target} (${new Date(s.created_at).toLocaleDateString()})`;
+        selectA.appendChild(optA);
+
+        const optB = document.createElement('option');
+        optB.value = s.id;
+        optB.text = `${s.id} — ${s.target} (${new Date(s.created_at).toLocaleDateString()})`;
+        selectB.appendChild(optB);
+      });
+
+      if (preselectedId) {
+        selectA.value = preselectedId;
+        if (cachedScanList.length > 1) {
+          const other = cachedScanList.find(s => s.id !== preselectedId);
+          if (other) selectB.value = other.id;
+        }
+      }
+
+      document.getElementById('diff-results-container').classList.add('hidden');
+      document.getElementById('modal-diff').classList.remove('hidden');
+    }
+
+    function closeDiffModal() {
+      document.getElementById('modal-diff').classList.add('hidden');
+    }
+
+    async function computeScanDiff() {
+      const scanA = document.getElementById('diff-select-a').value;
+      const scanB = document.getElementById('diff-select-b').value;
+      if (!scanA || !scanB) return alert('Please select two scans to compare.');
+      if (scanA === scanB) return alert('Please select two distinct scans.');
+
+      try {
+        const res = await fetch(`/api/scans/${scanA}/diff/${scanB}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          return alert(err.error || 'Failed to compute diff');
+        }
+        const diff = await res.json();
+        
+        document.getElementById('diff-badge-ports-added').innerText = `+${diff.summary.ports_added}`;
+        document.getElementById('diff-badge-ports-removed').innerText = `-${diff.summary.ports_removed}`;
+        document.getElementById('diff-badge-vulns-added').innerText = `+${diff.summary.vulns_added}`;
+        document.getElementById('diff-badge-vulns-resolved').innerText = `-${diff.summary.vulns_resolved}`;
+
+        // Render port deltas
+        const portsTbody = document.getElementById('diff-ports-tbody');
+        let portsHtml = '';
+        (diff.ports_added || []).forEach(p => {
+          portsHtml += `<tr class="bg-emerald-950/20 text-emerald-300"><td class="p-2.5 font-bold">+ OPENED</td><td class="p-2.5">${escapeHtml(p.ip)}</td><td class="p-2.5 font-mono">${p.port}</td><td class="p-2.5">${p.protocol}</td><td class="p-2.5">${escapeHtml(p.service)}</td></tr>`;
+        });
+        (diff.ports_removed || []).forEach(p => {
+          portsHtml += `<tr class="bg-red-950/20 text-red-300"><td class="p-2.5 font-bold">- CLOSED</td><td class="p-2.5">${escapeHtml(p.ip)}</td><td class="p-2.5 font-mono">${p.port}</td><td class="p-2.5">${p.protocol}</td><td class="p-2.5">${escapeHtml(p.service)}</td></tr>`;
+        });
+        portsTbody.innerHTML = portsHtml || `<tr><td colspan="5" class="p-4 text-center text-slate-500">No open/closed port differences between scans.</td></tr>`;
+
+        // Render vuln deltas
+        const vulnsContainer = document.getElementById('diff-vulns-list');
+        let vulnsHtml = '';
+        (diff.vulns_added || []).forEach(v => {
+          vulnsHtml += `<div class="p-2.5 bg-rose-950/30 border border-rose-800 rounded-lg text-rose-300 flex justify-between items-center"><span class="font-bold">+ NEW VULN: ${escapeHtml(v.title || v.id)}</span><span class="px-2 py-0.5 rounded text-[10px] bg-rose-900 uppercase font-mono">${v.severity || 'MEDIUM'}</span></div>`;
+        });
+        (diff.vulns_resolved || []).forEach(v => {
+          vulnsHtml += `<div class="p-2.5 bg-cyan-950/30 border border-cyan-800 rounded-lg text-cyan-300 flex justify-between items-center"><span class="font-bold">- RESOLVED: ${escapeHtml(v.title || v.id)}</span><span class="px-2 py-0.5 rounded text-[10px] bg-cyan-900 uppercase font-mono">${v.severity || 'MEDIUM'}</span></div>`;
+        });
+        vulnsContainer.innerHTML = vulnsHtml || `<div class="text-slate-500 italic p-2">No vulnerability posture changes.</div>`;
+
+        document.getElementById('diff-results-container').classList.remove('hidden');
+      } catch (err) {
+        console.error('Diff error:', err);
+        alert('Failed to compute drift: ' + err.message);
+      }
+    }
+
+    async function executePassiveRecon() {
+      const domainInput = document.getElementById('recon-domain-input');
+      const target = domainInput.value.trim();
+      if (!target) return alert('Please enter a target domain or hostname');
+
+      const btn = document.getElementById('btn-recon-run');
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Gathering OSINT...</span>`;
+
+      try {
+        const res = await fetch('/api/recon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domain: target })
+        });
+        if (!res.ok) throw new Error('Recon request failed');
+        const data = await res.json();
+
+        document.getElementById('recon-res-ip').innerText = data.target_ip || 'Unresolved';
+        document.getElementById('recon-res-sub-count').innerText = data.subdomains.length;
+
+        // Subdomains list
+        const subList = document.getElementById('recon-subdomains-list');
+        if (data.subdomains && data.subdomains.length > 0) {
+          subList.innerHTML = data.subdomains.map(s => `<div class="hover:text-cyan-400 py-0.5 flex items-center justify-between"><span>${escapeHtml(s)}</span><button onclick="navigator.clipboard.writeText('${s}')" class="text-slate-500 hover:text-white" title="Copy"><i class="fa-solid fa-copy"></i></button></div>`).join('');
+          document.getElementById('recon-subdomains-badge').innerText = `${data.subdomains.length} discovered`;
+        } else {
+          subList.innerHTML = `<div class="text-slate-500 italic">No subdomains discovered in CT logs.</div>`;
+          document.getElementById('recon-subdomains-badge').innerText = `0 found`;
+        }
+
+        // DNS Records
+        const dnsList = document.getElementById('recon-dns-list');
+        const recs = [];
+        if (data.dns_records.A) data.dns_records.A.forEach(ip => recs.push(`A: ${ip}`));
+        if (data.dns_records.AAAA) data.dns_records.AAAA.forEach(ip => recs.push(`AAAA: ${ip}`));
+        if (data.dns_records.CNAME) data.dns_records.CNAME.forEach(cn => recs.push(`CNAME: ${cn}`));
+        dnsList.innerHTML = recs.length > 0 ? recs.map(r => `<div>${escapeHtml(r)}</div>`).join('') : '<div class="text-slate-500 italic">No DNS records found.</div>';
+
+        // WHOIS / RDAP
+        const whoisBox = document.getElementById('recon-whois-details');
+        if (data.whois_info && Object.keys(data.whois_info).length > 0) {
+          whoisBox.innerHTML = `
+            <div><b>Registrar:</b> ${escapeHtml(data.whois_info.registrar || 'Unknown')}</div>
+            <div><b>Status:</b> ${escapeHtml(Array.isArray(data.whois_info.status) ? data.whois_info.status.join(', ') : '-')}</div>
+            <div><b>Created:</b> ${escapeHtml(data.whois_info.date_registration || '-')}</div>
+          `;
+        } else {
+          whoisBox.innerHTML = `<div class="text-slate-500 italic">No RDAP registry details.</div>`;
+        }
+
+        // Check Threat Intel & TLS in parallel
+        if (data.target_ip) {
+          fetch('/api/threat-intel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: data.target_ip })
+          }).then(r => r.json()).then(t => {
+            const badge = document.getElementById('recon-res-threat');
+            badge.innerText = t.threat_level;
+            badge.className = `text-lg font-black font-mono ${t.threat_level === 'CLEAN' ? 'text-emerald-400' : 'text-red-400'}`;
+          }).catch(() => {});
+        }
+
+        fetch('/api/tls-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ host: target, port: 443 })
+        }).then(r => r.json()).then(tls => {
+          const tlsBadge = document.getElementById('recon-res-tls');
+          tlsBadge.innerText = tls.grade;
+          tlsBadge.className = `text-lg font-black font-mono ${tls.grade.startsWith('A') ? 'text-emerald-400' : (tls.grade === 'B' ? 'text-cyan-400' : 'text-red-400')}`;
+        }).catch(() => {});
+
+        document.getElementById('recon-results-card').classList.remove('hidden');
+      } catch (err) {
+        console.error('Recon error:', err);
+        alert('OSINT reconnaissance error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fa-solid fa-bolt"></i><span>Scan OSINT</span>`;
+      }
     }
 
     function exportReport(format) {
@@ -1179,12 +1718,14 @@
       document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
       document.getElementById(tabId).classList.remove('hidden');
 
-      ['btn-tab-ports', 'btn-tab-vulns', 'btn-tab-attack-paths', 'btn-tab-terminal', 'btn-tab-history'].forEach(id => {
+      ['btn-tab-ports', 'btn-tab-vulns', 'btn-tab-attack-paths', 'btn-tab-terminal', 'btn-tab-recon', 'btn-tab-history'].forEach(id => {
         const btn = document.getElementById(id);
-        if (id === `btn-${tabId}`) {
-          btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-pentrax-800 text-white flex items-center space-x-1.5 transition border border-pentrax-red/40';
-        } else {
-          btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1.5 transition border border-transparent';
+        if (btn) {
+          if (id === `btn-${tabId}`) {
+            btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-pentrax-800 text-white flex items-center space-x-1.5 transition border border-pentrax-red/40';
+          } else {
+            btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1.5 transition border border-transparent';
+          }
         }
       });
 
@@ -1208,6 +1749,226 @@
     function escapeHtml(str) {
       if (!str) return '';
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function launchQuickPreset(presetType) {
+      openNewScanModal();
+      const targetInput = document.getElementById('scan-target');
+      if (!targetInput.value || targetInput.value.trim() === '') {
+        targetInput.value = '127.0.0.1';
+      }
+
+      if (presetType === 'fast') {
+        document.getElementById('scan-ports').value = 'top100';
+        document.getElementById('scan-timing').value = 'T4';
+        document.getElementById('scan-concurrency').value = '2000';
+        document.getElementById('scan-deep').checked = false;
+        document.getElementById('scan-dast').checked = false;
+        document.getElementById('scan-ssl').checked = false;
+        document.getElementById('scan-verify').checked = false;
+        document.getElementById('scan-icmp').checked = true;
+        document.getElementById('scan-udp').checked = false;
+      } else if (presetType === 'full') {
+        document.getElementById('scan-ports').value = '1-1000';
+        document.getElementById('scan-timing').value = 'T3';
+        document.getElementById('scan-concurrency').value = '1000';
+        document.getElementById('scan-deep').checked = true;
+        document.getElementById('scan-dast').checked = true;
+        document.getElementById('scan-ssl').checked = true;
+        document.getElementById('scan-verify').checked = true;
+        document.getElementById('scan-icmp').checked = true;
+        document.getElementById('scan-udp').checked = false;
+      } else if (presetType === 'stealth') {
+        document.getElementById('scan-ports').value = 'top1000';
+        document.getElementById('scan-timing').value = 'T2';
+        document.getElementById('scan-concurrency').value = '500';
+        document.getElementById('scan-deep').checked = true;
+        document.getElementById('scan-dast').checked = false;
+        document.getElementById('scan-ssl').checked = true;
+        document.getElementById('scan-verify').checked = false;
+        document.getElementById('scan-icmp').checked = false;
+        document.getElementById('scan-udp').checked = false;
+      } else if (presetType === 'api') {
+        document.getElementById('scan-ports').value = '80,443,3000,5000,8000,8080,8443,8888,9000,9090';
+        document.getElementById('scan-timing').value = 'T4';
+        document.getElementById('scan-concurrency').value = '1500';
+        document.getElementById('scan-deep').checked = true;
+        document.getElementById('scan-dast').checked = true;
+        document.getElementById('scan-ssl').checked = true;
+        document.getElementById('scan-verify').checked = true;
+        document.getElementById('scan-icmp').checked = true;
+        document.getElementById('scan-udp').checked = false;
+      }
+    }
+
+    async function loadDashboardStats() {
+      try {
+        const res = await fetch('/api/dashboard/stats');
+        if (!res.ok) return;
+        const stats = await res.json();
+
+        // Update Posture Score & Grade
+        const scoreEl = document.getElementById('posture-score-num');
+        const gradeEl = document.getElementById('posture-grade-letter');
+        if (scoreEl) scoreEl.innerText = stats.posture_score != null ? stats.posture_score : 100;
+        if (gradeEl) {
+          const grade = stats.posture_grade || 'A';
+          gradeEl.innerText = `GRADE ${grade}`;
+          gradeEl.className = 'text-[10px] font-mono font-bold uppercase tracking-wider ' + (
+            grade === 'A' ? 'text-emerald-400' :
+            grade === 'B' ? 'text-cyan-400' :
+            grade === 'C' ? 'text-amber-400' : 'text-pentrax-red'
+          );
+        }
+
+        // Update Global Telemetry KPIs
+        const kpiHosts = document.getElementById('kpi-total-hosts');
+        const kpiPorts = document.getElementById('kpi-open-ports');
+        const kpiCrit = document.getElementById('kpi-crit-vulns');
+        const kpiScans = document.getElementById('kpi-total-scans');
+        const chartVulnTotal = document.getElementById('chart-vuln-total');
+
+        if (kpiHosts) kpiHosts.innerText = stats.total_hosts || 0;
+        if (kpiPorts) kpiPorts.innerText = stats.total_ports || 0;
+        if (kpiCrit) kpiCrit.innerText = (stats.vulns_by_severity && stats.vulns_by_severity.CRITICAL) || 0;
+        if (kpiScans) kpiScans.innerText = stats.total_scans || 0;
+        if (chartVulnTotal) chartVulnTotal.innerText = `${stats.total_vulns || 0} findings`;
+
+        // Render Charts
+        renderSeverityChart(stats.vulns_by_severity || {});
+        renderServicesChart(stats.top_services || []);
+      } catch (err) {
+        console.error('Failed to load dashboard stats:', err);
+      }
+    }
+
+    function renderSeverityChart(vulns) {
+      const canvas = document.getElementById('chart-severity-doughnut');
+      if (!canvas || typeof Chart === 'undefined') return;
+
+      const dataVals = [
+        vulns.CRITICAL || 0,
+        vulns.HIGH || 0,
+        vulns.MEDIUM || 0,
+        vulns.LOW || 0,
+        vulns.INFO || 0
+      ];
+
+      const sum = dataVals.reduce((a, b) => a + b, 0);
+      const displayData = sum === 0 ? [0, 0, 0, 0, 1] : dataVals;
+      const displayColors = sum === 0 
+        ? ['#1f293d', '#1f293d', '#1f293d', '#1f293d', '#334155']
+        : ['#ff3344', '#f97316', '#eab308', '#3b82f6', '#64748b'];
+
+      if (severityChartInstance) {
+        severityChartInstance.data.datasets[0].data = displayData;
+        severityChartInstance.data.datasets[0].backgroundColor = displayColors;
+        severityChartInstance.update();
+        return;
+      }
+
+      const ctx = canvas.getContext('2d');
+      severityChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Critical', 'High', 'Medium', 'Low', 'Info'],
+          datasets: [{
+            data: displayData,
+            backgroundColor: displayColors,
+            borderColor: '#07090e',
+            borderWidth: 2,
+            hoverOffset: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '72%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                boxWidth: 10,
+                color: '#94a3b8',
+                font: { size: 10, family: 'JetBrains Mono' },
+                padding: 6
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  return sum === 0 ? ' No findings' : ` ${ctx.label}: ${ctx.raw}`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderServicesChart(topServices) {
+      const canvas = document.getElementById('chart-services-bar');
+      if (!canvas || typeof Chart === 'undefined') return;
+
+      let labels = [];
+      let counts = [];
+
+      if (!topServices || topServices.length === 0) {
+        labels = ['HTTP', 'HTTPS', 'SSH', 'DNS', 'SMB'];
+        counts = [0, 0, 0, 0, 0];
+      } else {
+        topServices.slice(0, 5).forEach(s => {
+          labels.push((s.service || 'unknown').toUpperCase());
+          counts.push(s.count || 0);
+        });
+      }
+
+      if (servicesChartInstance) {
+        servicesChartInstance.data.labels = labels;
+        servicesChartInstance.data.datasets[0].data = counts;
+        servicesChartInstance.update();
+        return;
+      }
+
+      const ctx = canvas.getContext('2d');
+      servicesChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: counts,
+            backgroundColor: '#06b6d4',
+            borderRadius: 4,
+            barThickness: 12
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              beginAtZero: true,
+              grid: { color: '#1a2234' },
+              ticks: { color: '#64748b', font: { size: 9, family: 'JetBrains Mono' }, precision: 0 }
+            },
+            y: {
+              grid: { display: false },
+              ticks: { color: '#cbd5e1', font: { size: 10, family: 'JetBrains Mono' } }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  return ` Endpoints: ${ctx.raw}`;
+                }
+              }
+            }
+          }
+        }
+      });
     }
   </script>
 </body>

@@ -4,6 +4,7 @@ Embedded SQLite storage with WAL mode, PBKDF2 password security,
 per-user scan isolation, and structured vulnerability findings inventory.
 """
 
+import contextlib
 import hashlib
 import json
 import os
@@ -53,12 +54,16 @@ class DatabaseManager:
         self._active_sessions: Dict[str, Dict[str, Any]] = {}
         self.init_schema()
 
-    def get_connection(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def get_connection(self):
         conn = sqlite3.connect(str(self.db_path), timeout=15.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def init_schema(self):
         """Initialize relational database tables and default admin user."""
@@ -125,10 +130,51 @@ class DatabaseManager:
             );
             """)
 
+            # 5. Persistent Sessions Table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                ip TEXT,
+                revoked INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            );
+            """)
+
+            # 6. Rate Limits Table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rate_limits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip TEXT NOT NULL,
+                action TEXT NOT NULL DEFAULT 'login',
+                created_at TEXT NOT NULL
+            );
+            """)
+
+            # 7. CVE Catalog Cache Table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cve_catalog (
+                cve_id TEXT PRIMARY KEY,
+                description TEXT,
+                severity TEXT,
+                cvss_score REAL,
+                epss_score REAL,
+                cpe_uris TEXT,
+                published TEXT,
+                modified TEXT
+            );
+            """)
+
             # Create Indexes
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_scans_owner ON scans(owner_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_scan ON findings(scan_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_risk ON findings(risk_level);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_rate_limits_ip ON rate_limits(ip, action, created_at);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_cve_severity ON cve_catalog(severity);")
 
             # Seed Default Admin Account if users table is empty
             cursor.execute("SELECT COUNT(*) FROM users;")
@@ -212,8 +258,8 @@ class DatabaseManager:
 
     # ─── Session Management ──────────────────────────────────────────
 
-    def create_session(self, user: Union[int, Dict[str, Any]], duration_hours: int = 24) -> str:
-        """Issue a cryptographically secure session token."""
+    def create_session(self, user: Union[int, Dict[str, Any]], duration_hours: int = 24, ip: Optional[str] = None) -> str:
+        """Issue a cryptographically secure session token and persist to database."""
         if isinstance(user, int):
             user_record = self.get_user_by_id(user)
             if not user_record:
@@ -221,6 +267,14 @@ class DatabaseManager:
             user = user_record
 
         token = secrets.token_urlsafe(32)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT INTO sessions (token, user_id, created_at, expires_at, ip, revoked)
+            VALUES (?, ?, datetime('now'), datetime('now', ?), ?, 0);
+            """, (token, user["id"], f"+{int(duration_hours)} hours", ip))
+            conn.commit()
+
         self._active_sessions[token] = {
             "id": user["id"],
             "username": user["username"],
@@ -230,14 +284,36 @@ class DatabaseManager:
         return token
 
     def get_user_from_session(self, token: str) -> Optional[Dict[str, Any]]:
-        """Retrieve user dictionary from active session token."""
+        """Retrieve user dictionary from active session token, querying SQLite with expiry check."""
         if not token:
             return None
-        return self._active_sessions.get(token)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            SELECT u.id, u.username, u.role, u.created_at
+            FROM sessions s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.token = ? AND s.revoked = 0 AND datetime(s.expires_at) > datetime('now');
+            """, (token,))
+            row = cursor.fetchone()
+            if row:
+                user_dict = dict(row)
+                self._active_sessions[token] = user_dict
+                return user_dict
+
+        self._active_sessions.pop(token, None)
+        return None
 
     def revoke_session(self, token: str) -> bool:
-        """Revoke active session token."""
-        return self._active_sessions.pop(token, None) is not None
+        """Revoke active session token in SQLite and memory."""
+        self._active_sessions.pop(token, None)
+        if not token:
+            return False
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE sessions SET revoked = 1 WHERE token = ?;", (token,))
+            conn.commit()
+            return cursor.rowcount > 0
 
     # ─── Scan Persistence & RBAC Queries ─────────────────────────────
 
@@ -316,31 +392,53 @@ class DatabaseManager:
 
             conn.commit()
 
-    def list_scans(self, user: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """List scans filtered by user role (Admin sees all; Operator sees only own)."""
+    def list_scans(
+        self,
+        user: Optional[Dict[str, Any]] = None,
+        page: Optional[int] = None,
+        per_page: int = 25,
+        sort: str = "created_at",
+        order: str = "desc"
+    ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+        """List scans filtered by user role, with optional pagination."""
+        valid_sort_cols = {"created_at": "s.created_at", "target": "s.target", "status": "s.status", "duration": "s.duration_seconds"}
+        sort_col = valid_sort_cols.get(sort, "s.created_at")
+        order_dir = "ASC" if str(order).lower() == "asc" else "DESC"
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            if not user or user.get("role") == "admin":
-                query = """
-                SELECT s.id, s.owner_id, s.target, s.status, s.duration_seconds, s.created_at, s.completed_at,
-                       s.config_json, s.summary_json, u.username as owner_username
-                FROM scans s
-                LEFT JOIN users u ON s.owner_id = u.id
-                ORDER BY s.created_at DESC;
-                """
-                cursor.execute(query)
-            else:
-                query = """
-                SELECT s.id, s.owner_id, s.target, s.status, s.duration_seconds, s.created_at, s.completed_at,
-                       s.config_json, s.summary_json, u.username as owner_username
-                FROM scans s
-                LEFT JOIN users u ON s.owner_id = u.id
-                WHERE s.owner_id = ?
-                ORDER BY s.created_at DESC;
-                """
-                cursor.execute(query, (user.get("id"),))
 
+            # Base WHERE clause
+            where_sql = ""
+            params: List[Any] = []
+            if user and user.get("role") != "admin":
+                where_sql = "WHERE s.owner_id = ?"
+                params.append(user.get("id"))
+
+            # Calculate total if pagination requested
+            total = 0
+            if page is not None:
+                count_query = f"SELECT COUNT(*) FROM scans s {where_sql};"
+                cursor.execute(count_query, params)
+                total = cursor.fetchone()[0]
+
+            # Main query
+            query = f"""
+            SELECT s.id, s.owner_id, s.target, s.status, s.duration_seconds, s.created_at, s.completed_at,
+                   s.config_json, s.summary_json, u.username as owner_username
+            FROM scans s
+            LEFT JOIN users u ON s.owner_id = u.id
+            {where_sql}
+            ORDER BY {sort_col} {order_dir}
+            """
+
+            if page is not None:
+                offset = max(0, (page - 1) * per_page)
+                query += f" LIMIT {int(per_page)} OFFSET {int(offset)}"
+
+            cursor.execute(query, params)
             rows = cursor.fetchall()
+
             scans_list = []
             for r in rows:
                 item = dict(r)
@@ -349,7 +447,83 @@ class DatabaseManager:
                 item["live_hosts_count"] = summary.get("hosts_alive", 0)
                 item["open_ports_count"] = summary.get("total_open_ports", 0)
                 scans_list.append(item)
+
+            if page is not None:
+                pages = max(1, (total + per_page - 1) // per_page)
+                return {
+                    "items": scans_list,
+                    "total": total,
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": pages,
+                }
             return scans_list
+
+    def diff_scans(self, scan_id_a: str, scan_id_b: str) -> Optional[Dict[str, Any]]:
+        """Compare two completed scans and compute network drift, port deltas, and vulnerability changes."""
+        scan_a = self.get_scan(scan_id_a)
+        scan_b = self.get_scan(scan_id_b)
+        if not scan_a or not scan_b:
+            return None
+
+        # Extract ports map: { (ip, port): info }
+        def extract_ports_and_vulns(scan_data):
+            ports_map = {}
+            vulns_set = set()
+            vulns_detail = {}
+            results = (scan_data.get("result") or {}).get("results", {})
+            for ip, host_info in results.items():
+                for p in host_info.get("ports", []):
+                    port_key = f"{ip}:{p.get('port')}"
+                    ports_map[port_key] = {
+                        "ip": ip,
+                        "port": p.get("port"),
+                        "service": p.get("service", "unknown"),
+                        "risk_level": p.get("risk_level", "LOW")
+                    }
+                    for cve in p.get("cves", []):
+                        cid = cve.get("cve", "CVE")
+                        vulns_set.add(f"{port_key}:{cid}")
+                        vulns_detail[f"{port_key}:{cid}"] = {
+                            "host": ip, "port": p.get("port"), "vuln_id": cid,
+                            "severity": p.get("risk_level", "HIGH")
+                        }
+                    for v in p.get("vulns", []):
+                        vid = v.get("id", "VULN") if isinstance(v, dict) else str(v)
+                        vsev = v.get("risk_level", "MEDIUM") if isinstance(v, dict) else "MEDIUM"
+                        vulns_set.add(f"{port_key}:{vid}")
+                        vulns_detail[f"{port_key}:{vid}"] = {
+                            "host": ip, "port": p.get("port"), "vuln_id": vid,
+                            "severity": vsev
+                        }
+            return ports_map, vulns_set, vulns_detail
+
+        ports_a, vulns_a, vulns_detail_a = extract_ports_and_vulns(scan_a)
+        ports_b, vulns_b, vulns_detail_b = extract_ports_and_vulns(scan_b)
+
+        keys_a = set(ports_a.keys())
+        keys_b = set(ports_b.keys())
+
+        new_ports = [ports_b[k] for k in (keys_b - keys_a)]
+        closed_ports = [ports_a[k] for k in (keys_a - keys_b)]
+        retained_ports = [ports_b[k] for k in (keys_a & keys_b)]
+
+        new_vulns = [vulns_detail_b[v] for v in (vulns_b - vulns_a)]
+        resolved_vulns = [vulns_detail_a[v] for v in (vulns_a - vulns_b)]
+
+        return {
+            "scan_a": {"id": scan_a["id"], "target": scan_a["target"], "created_at": scan_a["created_at"]},
+            "scan_b": {"id": scan_b["id"], "target": scan_b["target"], "created_at": scan_b["created_at"]},
+            "new_ports": new_ports,
+            "closed_ports": closed_ports,
+            "retained_ports": retained_ports,
+            "new_vulnerabilities": new_vulns,
+            "resolved_vulnerabilities": resolved_vulns,
+            "net_drift_summary": {
+                "ports_delta": len(new_ports) - len(closed_ports),
+                "vulns_delta": len(new_vulns) - len(resolved_vulns),
+            }
+        }
 
     def get_scan(self, scan_id: str) -> Optional[Dict[str, Any]]:
         """Fetch complete scan record by ID."""
@@ -403,6 +577,76 @@ class DatabaseManager:
             LIMIT ?;
             """, (limit,))
             return [dict(r) for r in cursor.fetchall()]
+
+    def get_dashboard_stats(self) -> Dict[str, Any]:
+        """Aggregate high-level metrics across all historical assessments."""
+        with self.get_connection() as conn:
+            total_scans = conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0]
+            completed_scans = conn.execute("SELECT COUNT(*) FROM scans WHERE status = 'completed'").fetchone()[0]
+
+            cursor = conn.execute("SELECT summary_json FROM scans WHERE status = 'completed' ORDER BY created_at DESC LIMIT 50")
+            rows = cursor.fetchall()
+
+            total_hosts = 0
+            total_ports = 0
+            vuln_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
+            services_count: Dict[str, int] = {}
+            target_scores: List[Dict[str, Any]] = []
+
+            for row in rows:
+                if not row[0]:
+                    continue
+                try:
+                    res = json.loads(row[0])
+                    results = res.get("results", {})
+                    target = res.get("target", "Unknown")
+                    target_vulns = 0
+                    for ip, host_info in results.items():
+                        total_hosts += 1
+                        for p in host_info.get("ports", []):
+                            total_ports += 1
+                            svc = p.get("service", "unknown")
+                            services_count[svc] = services_count.get(svc, 0) + 1
+                            for v in p.get("vulns", []):
+                                sev = v.get("risk_level") or v.get("severity") or "MEDIUM" if isinstance(v, dict) else "MEDIUM"
+                                sev_up = str(sev).upper()
+                                if sev_up in vuln_counts:
+                                    vuln_counts[sev_up] += 1
+                                else:
+                                    vuln_counts["MEDIUM"] += 1
+                                target_vulns += 1
+                            for c in p.get("cves", []):
+                                cvss = float(c.get("cvss_score", 7.5))
+                                sev = "CRITICAL" if cvss >= 9.0 else "HIGH"
+                                vuln_counts[sev] += 1
+                                target_vulns += 1
+                    target_scores.append({"target": target, "vulns": target_vulns, "hosts": len(results)})
+                except Exception:
+                    pass
+
+            top_services = [
+                {"service": k, "count": v}
+                for k, v in sorted(services_count.items(), key=lambda x: x[1], reverse=True)[:6]
+            ]
+            total_vulns = sum(vuln_counts.values())
+
+            penalty = vuln_counts["CRITICAL"] * 15 + vuln_counts["HIGH"] * 5 + vuln_counts["MEDIUM"] * 1
+            posture_score = max(15, 100 - penalty) if (total_hosts > 0 or total_scans > 0) else 100
+
+            return {
+                "total_scans": total_scans,
+                "completed_scans": completed_scans,
+                "total_hosts": total_hosts,
+                "total_ports": total_ports,
+                "total_open_ports": total_ports,
+                "total_vulns": total_vulns,
+                "posture_score": posture_score,
+                "posture_grade": "A" if posture_score >= 90 else ("B" if posture_score >= 75 else ("C" if posture_score >= 60 else "F")),
+                "vulns_by_severity": vuln_counts,
+                "vuln_breakdown": vuln_counts,
+                "top_services": top_services,
+                "recent_targets": target_scores[:5],
+            }
 
 
 # Global Singleton Database Manager instance

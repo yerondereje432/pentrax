@@ -77,7 +77,11 @@ try:
 except:
     pass
 
-VERSION = "8.0"
+VERSION = "10.0"
+try:
+    from scanner.reporting import generate_executive_summary
+except ImportError:
+    pass
 
 # ═══════════════════════════════════════════════════════════════════
 #  SECTION 2: ENUMS & DATA STRUCTURES
@@ -5317,7 +5321,7 @@ async def amain(args, event_callback=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=f"Yerscan v{VERSION} — Professional Network Scanner",
+        description=f"PENTRAX v{VERSION} — Enterprise Attack Surface Discovery & Red Team Scanner",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("target", nargs="?", help="Target: CIDR, IP, or hostname")

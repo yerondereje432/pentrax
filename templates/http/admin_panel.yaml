@@ -1,0 +1,25 @@
+id: PENTRAX-HTTP-003
+name: Exposed Administrative Control Panel
+severity: MEDIUM
+cvss: 5.3
+http:
+  - method: GET
+    paths:
+      - /admin/
+      - /admin/login
+      - /administrator/
+      - /wp-login.php
+      - /manager/html
+    matchers:
+      - type: status
+        values: [200, 401]
+      - type: word
+        words:
+          - "admin"
+          - "dashboard"
+          - "login"
+          - "management interface"
+        condition: or
+remediation: Restrict administrative portals to internal VPN or enforce IP allowlists and multi-factor authentication.
+sla: 30 Days
+
