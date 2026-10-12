@@ -13,6 +13,8 @@ python3 app.py
 
 Open `http://127.0.0.1:5000`. The dashboard looks for `*.json` reports in `reports/` by default. A small mixed-risk sample report is included at `reports/sample_report.json`. You can also upload a report from the header.
 
+Set the shared dashboard password and session key before starting Flask. You can copy `.env.example` to `.env`, then export those values in your shell (or use a process manager's environment configuration). The app reads `YERSCAN_PASSWORD` and `YERSCAN_SECRET_KEY`; neither value is stored in source control.
+
 ```bash
 YERSCAN_REPORT_DIR=/path/to/reports python3 app.py
 ```

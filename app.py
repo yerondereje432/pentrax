@@ -5,12 +5,14 @@ import ipaddress
 import io
 import json
 import os
+import secrets
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
-from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from parser import compare_reports, load_report, report_metadata, summarise_report
 
@@ -20,7 +22,53 @@ REPORT_DIR = Path(os.environ.get("YERSCAN_REPORT_DIR", BASE_DIR / "reports"))
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
+app.config.from_mapping(
+    SECRET_KEY=os.environ.get("YERSCAN_SECRET_KEY") or secrets.token_hex(32),
+    YERSCAN_PASSWORD=os.environ.get("YERSCAN_PASSWORD"),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
+
+def _safe_next_url(value: str | None) -> str | None:
+    """Only allow redirects back into this dashboard after login."""
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/"):
+        return None
+    return value
+
+
+@app.before_request
+def require_authentication():
+    if request.endpoint in {"login", "static"}:
+        return None
+    if session.get("authenticated") is not True:
+        return redirect(url_for("login", next=request.full_path.rstrip("?")))
+    return None
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    next_url = request.form.get("next") or request.args.get("next")
+    error = None
+    if request.method == "POST":
+        configured_password = app.config.get("YERSCAN_PASSWORD")
+        submitted_password = request.form.get("password", "")
+        if configured_password and secrets.compare_digest(submitted_password, configured_password):
+            session.clear()
+            session["authenticated"] = True
+            return redirect(_safe_next_url(next_url) or url_for("reports_list"))
+        error = "Invalid password." if configured_password else "Authentication is not configured. Set YERSCAN_PASSWORD before starting the dashboard."
+    return render_template("login.html", error=error, next_url=next_url or "")
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 def report_paths() -> list[Path]:
