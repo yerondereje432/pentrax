@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import csv
+import ipaddress
 import io
 import json
 import os
-from pathlib import Path
+import subprocess
+import sys
 from datetime import datetime
+from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for
 
@@ -50,6 +53,73 @@ def safe_report_path(name: str) -> Path | None:
 @app.get("/")
 def reports_list():
     return render_template("reports_list.html", reports=available_reports())
+
+
+def render_reports_page(*, scan_error: str | None = None, scan_target: str = "", scan_preset: str = "quick"):
+    return render_template(
+        "reports_list.html",
+        reports=available_reports(),
+        scan_error=scan_error,
+        scan_target=scan_target,
+        scan_preset=scan_preset,
+    )
+
+
+@app.post("/scans")
+def run_scan():
+    target = request.form.get("target", "").strip()
+    preset = request.form.get("preset", "").strip().lower()
+    allowed_presets = {"quick", "fast", "full", "stealth"}
+
+    if not target:
+        return render_reports_page(scan_error="Enter an IP address or CIDR target.", scan_target=target, scan_preset=preset)
+    try:
+        ipaddress.ip_network(target, strict=False)
+    except ValueError:
+        return render_reports_page(scan_error="Target must be a valid IP address or CIDR range.", scan_target=target, scan_preset=preset)
+    if preset not in allowed_presets:
+        return render_reports_page(scan_error="Choose a valid scan preset.", scan_target=target, scan_preset="quick")
+
+    output_base = REPORT_DIR / f"yerscan_{datetime.now():%Y%m%d_%H%M%S_%f}"
+    output_path = Path(f"{output_base}.json")
+    command = [sys.executable, "yerscan.py", target, f"--{preset}", "-y", "-o", str(output_base)]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        return render_reports_page(
+            scan_error=f"Could not start yerscan.py: {exc}",
+            scan_target=target,
+            scan_preset=preset,
+        )
+
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "The scanner exited without a diagnostic.").strip()
+        return render_reports_page(
+            scan_error=f"Scan failed: {detail[-500:]}",
+            scan_target=target,
+            scan_preset=preset,
+        )
+    if not output_path.is_file():
+        return render_reports_page(
+            scan_error="Scan finished but did not produce a JSON report.",
+            scan_target=target,
+            scan_preset=preset,
+        )
+    try:
+        load_report(output_path)
+    except (OSError, ValueError, TypeError) as exc:
+        return render_reports_page(
+            scan_error=f"Scan produced an invalid JSON report: {exc}",
+            scan_target=target,
+            scan_preset=preset,
+        )
+    return redirect(url_for("report_detail", name=output_path.name))
 
 
 @app.get("/reports/<name>")

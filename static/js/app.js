@@ -1,5 +1,11 @@
 (() => {
   const toast = message => { const el = document.getElementById('toast'); if (!el) return; el.textContent = message; el.classList.add('show'); clearTimeout(window.__toast); window.__toast = setTimeout(() => el.classList.remove('show'), 2500); };
+  document.querySelectorAll('[data-scan-form]').forEach(form => form.addEventListener('submit', () => {
+    const button = form.querySelector('button[type="submit"]');
+    if (!button) return;
+    button.disabled = true;
+    button.textContent = 'Scanning...';
+  }));
   document.querySelectorAll('input[type="file"]').forEach(upload => upload.addEventListener('change', async event => {
     const file = event.target.files[0]; if (!file) return;
     const form = new FormData(); form.append('report', file);
