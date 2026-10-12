@@ -202,6 +202,14 @@
         <!-- Report Exporters -->
         <div class="flex items-center space-x-2">
           <span class="text-xs text-slate-400 mr-1 hidden sm:inline">Export Dossier:</span>
+          <button onclick="exportReport('md')" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-cyan-400 text-xs rounded text-slate-200 flex items-center space-x-1 transition font-bold" title="Download README.md Report">
+            <i class="fa-brands fa-markdown text-cyan-400"></i>
+            <span>README.md</span>
+          </button>
+          <button onclick="copyMarkdownReport()" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-cyan-400 text-xs rounded text-slate-300 flex items-center space-x-1 transition" title="Copy Markdown to Clipboard">
+            <i class="fa-solid fa-copy text-slate-300"></i>
+            <span id="copy-btn-text">Copy MD</span>
+          </button>
           <button onclick="exportReport('html')" class="px-2.5 py-1 bg-pentrax-850 hover:bg-pentrax-800 border border-pentrax-700 hover:border-pentrax-red text-xs rounded text-slate-300 flex items-center space-x-1 transition" title="Executive HTML Report">
             <i class="fa-solid fa-file-code text-pentrax-red"></i>
             <span>HTML</span>
@@ -995,6 +1003,25 @@
         return alert('Please select or run an assessment before exporting.');
       }
       window.open(`/api/scans/${activeScanId}/export/${format}`, '_blank');
+    }
+
+    async function copyMarkdownReport() {
+      if (!activeScanId) {
+        return alert('Please select or run an assessment before copying.');
+      }
+      const copyBtnText = document.getElementById('copy-btn-text');
+      try {
+        const res = await fetch(`/api/scans/${activeScanId}/export/md`);
+        if (!res.ok) throw new Error('Failed to fetch Markdown report');
+        const text = await res.text();
+        await navigator.clipboard.writeText(text);
+        if (copyBtnText) copyBtnText.textContent = 'Copied!';
+        setTimeout(() => { if (copyBtnText) copyBtnText.textContent = 'Copy MD'; }, 2000);
+      } catch (err) {
+        console.error('Clipboard copy failed:', err);
+        alert('Failed to copy to clipboard. Downloading README.md instead.');
+        exportReport('md');
+      }
     }
 
     function switchTab(tabId) {
