@@ -15,6 +15,8 @@ Open `http://127.0.0.1:5000`. The dashboard looks for `*.json` reports in `repor
 
 Set the shared dashboard password and session key before starting Flask. You can copy `.env.example` to `.env`, then export those values in your shell (or use a process manager's environment configuration). The app reads `YERSCAN_PASSWORD` and `YERSCAN_SECRET_KEY`; neither value is stored in source control.
 
+Optional scan alerts can be enabled with `YERSCAN_ALERT_WEBHOOK_URL`, set to a Discord or Slack incoming-webhook URL. After a scan or manual upload, the dashboard compares the report with the previous scan of the same target and posts only when a new CRITICAL or HIGH finding is present. If the variable is unset, alerts are skipped.
+
 ```bash
 YERSCAN_REPORT_DIR=/path/to/reports python3 app.py
 ```

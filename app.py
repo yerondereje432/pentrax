@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from parser import compare_reports, finding_key, flatten_findings, load_report, report_metadata, summarise_report
+from notifier import notify_new_findings
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -134,6 +135,41 @@ def history_context() -> dict:
 
     entries.sort(key=_scan_sort_key)
     return {"entries": entries, "chart_data": chart_data, "targets": sorted(chart_data)}
+
+
+def previous_scan_report(current_report: dict, excluded_name: str | None = None) -> dict | None:
+    """Find the prior stored scan for the current report's target."""
+    target = str(current_report.get("target") or "Unknown target")
+    candidates = [
+        item for item in available_reports()
+        if str(item.get("target") or "Unknown target") == target and item.get("name") != excluded_name
+    ]
+    if not candidates:
+        return None
+
+    candidates.sort(key=_scan_sort_key)
+    current_item = report_metadata("__current__.json", current_report)
+    prior = [item for item in candidates if _scan_sort_key(item) < _scan_sort_key(current_item)]
+    selected = prior[-1] if prior else candidates[-1]
+    try:
+        return load_report(REPORT_DIR / selected["name"])
+    except (OSError, ValueError, TypeError):
+        app.logger.warning("Could not load previous scan report: %s", selected.get("name"))
+        return None
+
+
+def alert_for_completed_scan(report: dict, report_name: str, excluded_name: str | None = None) -> None:
+    """Compare a completed scan with its prior target scan and alert if needed."""
+    previous = previous_scan_report(report, excluded_name=excluded_name or report_name)
+    if previous is None:
+        return
+    diff = compare_reports(previous, report)
+    notify_new_findings(
+        target=str(report.get("target") or "Unknown target"),
+        report_name=report_name,
+        diff=diff,
+        logger=app.logger,
+    )
 
 
 def safe_report_path(name: str) -> Path | None:
@@ -267,6 +303,12 @@ def run_scan():
             scan_target=target,
             scan_preset=preset,
         )
+    try:
+        completed_report = load_report(output_path)
+        alert_for_completed_scan(completed_report, output_path.name)
+    except (OSError, ValueError, TypeError):
+        # The report was already validated above; alerting remains best-effort.
+        app.logger.exception("Could not compare completed scan for alerting: %s", output_path)
     return redirect(url_for("report_detail", name=output_path.name))
 
 
@@ -339,6 +381,7 @@ def upload_report():
         return jsonify({"error": "This does not look like a yerscan JSON report"}), 400
     path = REPORT_DIR / filename
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    alert_for_completed_scan(payload, filename)
     return jsonify({"name": filename, "redirect": url_for("report_detail", name=filename)})
 
 

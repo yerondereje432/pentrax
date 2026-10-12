@@ -175,9 +175,25 @@ def compare_reports(previous: dict[str, Any], current: dict[str, Any]) -> dict[s
         )
 
     risk_score_changes.sort(key=lambda item: (abs(item["delta"]), item["host"]), reverse=True)
+    previous_findings = {finding_key(row): row for row in flatten_findings(previous)}
+    current_findings = {finding_key(row): row for row in flatten_findings(current)}
+    new_findings = [
+        row for key, row in current_findings.items()
+        if key not in previous_findings
+    ]
+    new_findings.sort(
+        key=lambda row: (
+            -RISK_RANK.get(str(row.get("risk_level", "INFO")).upper(), 0),
+            str(row.get("host_ip", "")),
+            str(row.get("port", "")),
+            str(row.get("cve_id", "")),
+            str(row.get("description", "")),
+        )
+    )
     return {
         "new_open_ports": _group_ports(current_ports - previous_ports),
         "closed_ports": _group_ports(previous_ports - current_ports),
         "new_cves": sorted(current_cves - previous_cves),
+        "new_findings": new_findings,
         "risk_score_changes": risk_score_changes,
     }
