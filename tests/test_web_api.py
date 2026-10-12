@@ -149,12 +149,18 @@ class TestWebAPI(unittest.TestCase):
         resp_html = self.client.get(f"/api/scans/{instance.id}/export/html")
         self.assertEqual(resp_html.status_code, 200)
         self.assertIn("<!doctype html>", resp_html.text.lower())
-        self.assertIn("Yerscan Report", resp_html.text)
+        self.assertIn("PENTRAX", resp_html.text)
 
         # CSV Export
         resp_csv = self.client.get(f"/api/scans/{instance.id}/export/csv")
         self.assertEqual(resp_csv.status_code, 200)
         self.assertIn("127.0.0.1", resp_csv.text)
+
+        # Markdown / README Export
+        resp_md = self.client.get(f"/api/scans/{instance.id}/export/md")
+        self.assertEqual(resp_md.status_code, 200)
+        self.assertIn("# 🛡️ PENTRAX Security Assessment Report", resp_md.text)
+        self.assertIn("127.0.0.1", resp_md.text)
 
     def test_websocket_sync(self):
         """WebSocket /ws/scans/{scan_id} receives initial sync state."""

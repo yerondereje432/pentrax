@@ -4491,6 +4491,125 @@ tr:hover{{background:#22282f}} .stats{{display:flex;gap:15px;margin:15px 0;flex-
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)
 
+def generate_markdown(data):
+    """Generate professional GitHub-flavored Markdown README / report string."""
+    target = data.get("target", "Unknown")
+    scan_time = data.get("scan_time", "N/A")
+    duration = data.get("duration_seconds", 0)
+    scan_type = data.get("scan_type", "connect").upper()
+    hosts_alive = data.get("hosts_alive", len(data.get("results", {})))
+    total_open = data.get("total_open_ports", 0)
+    risky_services = data.get("risky_services", 0)
+    cves_found = data.get("cves_found", 0)
+    vulns_found = data.get("vulns_found", 0)
+
+    lines = [
+        f"# 🛡️ PENTRAX Security Assessment Report",
+        f"### **TARGET: `{target}`**",
+        "",
+        f"- **Assessment Date**: `{scan_time}`",
+        f"- **Scan Type**: `{scan_type}`",
+        f"- **Duration**: `{duration}s`",
+        f"- **Engine**: PENTRAX v{VERSION} (Academic & Professional Security Assessment)",
+        "",
+        "---",
+        "",
+        "## 📊 Executive Summary Metrics",
+        "",
+        "| Metric | Count | Description |",
+        "| :--- | :---: | :--- |",
+        f"| **Hosts Discovered Alive** | `{hosts_alive}` | Total responsive targets in perimeter |",
+        f"| **Open Ports Found** | `{total_open}` | Exposed external service endpoints |",
+        f"| **Vulnerabilities Detected** | `{vulns_found}` | Exploits, weak configs, & DAST findings |",
+        f"| **CVE Cross-References** | `{cves_found}` | Verified public CVE matches |",
+        f"| **Inherently Risky Services** | `{risky_services}` | Sensitive services (e.g. Telnet, SMB, Redis) |",
+        "",
+        "---",
+        "",
+        "## 🔍 Discovered Services & Port Inventory",
+        "",
+        "| Host IP | Port / Proto | State | Service | Version / Banner | Risk Level | Findings & CVEs |",
+        "| :--- | :---: | :---: | :--- | :--- | :---: | :--- |",
+    ]
+
+    results = data.get("results", {})
+    if not results:
+        lines.append("| - | - | - | - | *No open ports discovered* | - | - |")
+    else:
+        for ip, info in sorted(results.items()):
+            ports = info.get("ports", [])
+            if not ports:
+                continue
+            for p in ports:
+                port_num = p.get("port")
+                proto = p.get("protocol", "tcp")
+                state = p.get("state", "open")
+                service = p.get("service", "unknown")
+                version = p.get("version", "").strip() or "-"
+                risk = p.get("risk_level", "LOW")
+                
+                # Format findings
+                findings_parts = []
+                for cve in p.get("cves", []):
+                    c_id = cve.get("cve", "")
+                    cvss = cve.get("cvss_score", "")
+                    findings_parts.append(f"`{c_id}` (CVSS: {cvss})" if cvss else f"`{c_id}`")
+                for v in p.get("vulns", []):
+                    v_title = v.get("title", str(v))
+                    findings_parts.append(v_title)
+                
+                findings_str = "<br>".join(findings_parts) if findings_parts else "None detected"
+                # Markdown table sanitize
+                service_clean = service.replace("|", "/")
+                version_clean = version.replace("|", "/")
+                lines.append(f"| `{ip}` | `{port_num}/{proto}` | `{state}` | **{service_clean}** | {version_clean} | `{risk}` | {findings_str} |")
+
+    # DAST & Attack Paths
+    lines.extend([
+        "",
+        "---",
+        "",
+        "## ⚔️ Attack Path Analysis & MITRE ATT&CK Mapping",
+        "",
+    ])
+
+    attack_paths = data.get("attack_paths", [])
+    if not attack_paths:
+        lines.append("> No critical attack paths or high-risk exploit chains were confirmed during this assessment.")
+    else:
+        lines.append("| Target Port | Exploitation Vector | Feasibility | Impact | Threat Actors | MITRE ATT&CK |")
+        lines.append("| :--- | :--- | :---: | :---: | :--- | :--- |")
+        for ap in attack_paths:
+            pt = ap.get("port")
+            svc = ap.get("service", "")
+            chain = ap.get("attack_chains", ["Unknown vector"])[0]
+            feas = ap.get("feasibility", "UNKNOWN")
+            imp = ap.get("impact", "UNKNOWN")
+            actors = ", ".join(ap.get("threat_actors", [])) or "Opportunistic"
+            mitre = "<br>".join(ap.get("mitre_techniques", [])) or "T1190"
+            lines.append(f"| `{pt}` ({svc}) | {chain} | `{feas}` | `{imp}` | {actors} | {mitre} |")
+
+    lines.extend([
+        "",
+        "---",
+        "",
+        "## 📝 Remediation Recommendations",
+        "- **Critical / High Findings (SLA: 48h - 14d)**: Patch exposed remote services immediately, enforce restrictive firewall rules, or disable legacy protocols (e.g. SMBv1, TLS 1.0).",
+        "- **Web Security Headers**: Enforce `Content-Security-Policy`, `Strict-Transport-Security` (HSTS), and `X-Frame-Options` on web frontends.",
+        "- **Access Control**: Restrict administrative panels (SSH, RDP, Redis, MongoDB) behind VPNs or IP allowlists.",
+        "",
+        "> *Report generated automatically by PENTRAX v8.0 Enterprise Security Assessment Platform.*",
+        ""
+    ])
+
+    return "\n".join(lines)
+
+def export_markdown(data, path):
+    """Export results to GitHub-flavored Markdown README / report."""
+    md_content = generate_markdown(data)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(md_content)
+
 # ═══════════════════════════════════════════════════════════════════
 #  SECTION 25: SELF-TEST SUITE
 # ═══════════════════════════════════════════════════════════════════

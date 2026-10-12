@@ -214,6 +214,13 @@ async def export_scan(request):
                 media_type="text/csv",
                 headers={"Content-Disposition": f'attachment; filename="pentrax_{scan_id}.csv"'},
             )
+        elif export_format in ("md", "markdown"):
+            md_text = ys.generate_markdown(result_data)
+            return Response(
+                content=md_text.encode("utf-8"),
+                media_type="text/markdown",
+                headers={"Content-Disposition": f'attachment; filename="README_{scan_id}.md"'},
+            )
         elif export_format == "html":
             ys.export_html(result_data, tmp_path)
             with open(tmp_path, "rb") as f:
