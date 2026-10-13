@@ -197,7 +197,7 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cve_severity ON cve_catalog(severity);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules(next_run_at, enabled);")
 
-            # Seed Default Admin Account if users table is empty
+            # Seed Default Accounts if users table is empty
             cursor.execute("SELECT COUNT(*) FROM users;")
             if cursor.fetchone()[0] == 0:
                 admin_hash, admin_salt = hash_password("pentrax1337")
@@ -205,6 +205,12 @@ class DatabaseManager:
                 INSERT INTO users (username, password_hash, salt, role, created_at)
                 VALUES (?, ?, ?, 'admin', datetime('now'));
                 """, ("admin", admin_hash, admin_salt))
+
+                yo_hash, yo_salt = hash_password("pentrax1337")
+                cursor.execute("""
+                INSERT INTO users (username, password_hash, salt, role, created_at)
+                VALUES (?, ?, ?, 'admin', datetime('now'));
+                """, ("yohannes", yo_hash, yo_salt))
                 
                 # Seed a default demo operator
                 op_hash, op_salt = hash_password("operator123")

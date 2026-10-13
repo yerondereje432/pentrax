@@ -201,7 +201,7 @@
             <span>Sign In</span>
           </button>
           
-          <div id="user-profile-badge" class="flex items-center space-x-2.5 px-3 py-1.5 bg-[#0d121d] rounded-xl border border-slate-800 text-xs">
+          <div id="user-profile-badge" class="hidden flex items-center space-x-2.5 px-3 py-1.5 bg-[#0d121d] rounded-xl border border-slate-800 text-xs">
             <div id="user-avatar-initials" class="w-7 h-7 rounded-lg bg-gradient-to-br from-red-600 to-rose-700 text-white font-black text-[11px] flex items-center justify-center shadow-sm">
               YG
             </div>
@@ -209,7 +209,7 @@
               <span id="user-display-name" class="font-bold text-white text-xs block">Yohannes Garomsa</span>
               <span id="user-role-badge" class="text-[10px] text-slate-400 font-medium">Security Analyst</span>
             </div>
-            <button onclick="handleLogout()" class="text-slate-500 hover:text-red-400 ml-1 transition" title="Sign out">
+            <button type="button" onclick="handleLogout()" class="cursor-pointer p-1 rounded hover:bg-red-950/60 text-slate-400 hover:text-red-400 ml-1 transition" title="Sign out">
               <i class="fa-solid fa-right-from-bracket text-xs"></i>
             </button>
           </div>
@@ -1258,10 +1258,19 @@
           <input type="password" id="login-password" required placeholder="••••••••" class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none font-mono">
         </div>
         <div id="login-error-msg" class="hidden text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-lg border border-rose-800"></div>
-        <div class="text-[11px] text-slate-400 bg-pentrax-950 p-2.5 rounded-lg border border-pentrax-800 space-y-1">
-          <p class="font-semibold text-slate-300">Default Credentials:</p>
-          <p class="font-mono text-[10px]">Administrator: <span class="text-pentrax-red font-bold">admin</span> / <span class="text-slate-300">pentrax1337</span></p>
-          <p class="font-mono text-[10px]">Operator: <span class="text-amber-400 font-bold">operator</span> / <span class="text-slate-300">operator123</span></p>
+        <div class="text-[11px] text-slate-400 bg-pentrax-950 p-2.5 rounded-lg border border-pentrax-800 space-y-1.5">
+          <p class="font-semibold text-slate-300">Quick Credentials (Click to Fill):</p>
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" onclick="fillLoginForm('yohannes', 'pentrax1337')" class="px-2 py-1 bg-red-950/60 hover:bg-red-900 border border-red-500/40 rounded text-[10px] font-mono text-red-300 transition">
+              yohannes (Admin)
+            </button>
+            <button type="button" onclick="fillLoginForm('admin', 'pentrax1337')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[10px] font-mono text-slate-200 transition">
+              admin
+            </button>
+            <button type="button" onclick="fillLoginForm('operator', 'operator123')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[10px] font-mono text-slate-200 transition">
+              operator
+            </button>
+          </div>
         </div>
         <div class="flex justify-end space-x-2 pt-2">
           <button type="button" onclick="closeLoginModal()" class="px-4 py-2 bg-pentrax-800 hover:bg-pentrax-750 text-slate-300 text-xs font-semibold rounded-lg">Cancel</button>
@@ -1582,11 +1591,21 @@
     }
 
     // ─── RBAC & User Profile ───
+    function fillLoginForm(u, p) {
+      const uEl = document.getElementById('login-username');
+      const pEl = document.getElementById('login-password');
+      if (uEl) uEl.value = u;
+      if (pEl) pEl.value = p;
+    }
+
     async function checkAuthStatus() {
       try {
-        const res = await fetch('/api/auth/me');
+        const token = sessionStorage.getItem('pentrax_token');
+        const headers = token ? { 'X-Session-Token': token } : {};
+        const res = await fetch('/api/auth/me', { headers });
         if (res.ok) {
-          currentUser = await res.json();
+          const data = await res.json();
+          currentUser = data.user || data;
           renderUserBadge();
         } else {
           currentUser = null;
@@ -1604,23 +1623,41 @@
       const userDisplay = document.getElementById('user-display-name');
       const roleBadge = document.getElementById('user-role-badge');
       const avatarInitials = document.getElementById('user-avatar-initials');
+      const greetingEl = document.getElementById('dash-user-greeting');
 
-      if (currentUser) {
-        loginBtn.classList.add('hidden');
-        profileBadge.classList.remove('hidden');
-        userDisplay.innerText = currentUser.username;
-        roleBadge.innerText = currentUser.role === 'admin' ? 'Security Analyst (Admin)' : currentUser.role;
-        avatarInitials.innerText = (currentUser.username || 'YG').substring(0, 2).toUpperCase();
-        
-        document.getElementById('settings-user-name').innerText = currentUser.username;
-        document.getElementById('settings-user-role').innerText = currentUser.role;
+      if (currentUser && currentUser.username) {
+        if (loginBtn) loginBtn.classList.add('hidden');
+        if (profileBadge) {
+          profileBadge.classList.remove('hidden');
+          profileBadge.classList.add('flex');
+        }
+
+        const isYo = (currentUser.username || '').toLowerCase() === 'yohannes';
+        const displayName = isYo ? 'Yohannes Garomsa' : currentUser.username;
+        const displayRole = currentUser.role === 'admin' ? 'Security Analyst' : (currentUser.role === 'operator' ? 'Security Operator' : 'Security Viewer');
+        const initials = isYo ? 'YG' : currentUser.username.substring(0, 2).toUpperCase();
+
+        if (userDisplay) userDisplay.innerText = displayName;
+        if (roleBadge) roleBadge.innerText = displayRole;
+        if (avatarInitials) avatarInitials.innerText = initials;
+
+        const sName = document.getElementById('settings-user-name');
+        if (sName) sName.innerText = displayName;
+        const sRole = document.getElementById('settings-user-role');
+        if (sRole) sRole.innerText = displayRole;
+
+        if (greetingEl) {
+          greetingEl.innerText = `Welcome back, ${isYo ? 'Yohannes' : currentUser.username}!`;
+        }
       } else {
-        // Unauthenticated defaults to Analyst preview
-        loginBtn.classList.remove('hidden');
-        profileBadge.classList.remove('hidden');
-        userDisplay.innerText = 'Yohannes Garomsa';
-        roleBadge.innerText = 'Security Analyst';
-        avatarInitials.innerText = 'YG';
+        if (loginBtn) loginBtn.classList.remove('hidden');
+        if (profileBadge) {
+          profileBadge.classList.add('hidden');
+          profileBadge.classList.remove('flex');
+        }
+        if (greetingEl) {
+          greetingEl.innerText = 'Welcome to PENTRAX!';
+        }
       }
     }
 
@@ -1655,6 +1692,9 @@
           errorEl.innerText = data.error || 'Login failed';
           errorEl.classList.remove('hidden');
         } else {
+          if (data.token) {
+            sessionStorage.setItem('pentrax_token', data.token);
+          }
           currentUser = data.user;
           renderUserBadge();
           closeLoginModal();
@@ -1672,11 +1712,17 @@
 
     async function handleLogout() {
       try {
-        await fetch('/api/auth/logout', { method: 'POST' });
-      } catch (e) {}
+        const token = sessionStorage.getItem('pentrax_token');
+        const headers = token ? { 'X-Session-Token': token } : {};
+        await fetch('/api/auth/logout', { method: 'POST', headers });
+      } catch (e) {
+        console.warn('Logout request failed:', e);
+      }
+      sessionStorage.removeItem('pentrax_token');
       currentUser = null;
       renderUserBadge();
       await loadScanHistory();
+      await loadDashboardStats();
     }
 
     // ─── System Capabilities ───
@@ -1715,8 +1761,12 @@
         // 1. User Greeting & Live Date Indicator
         const greetingEl = document.getElementById('dash-user-greeting');
         if (greetingEl) {
-          const uName = (currentUser && currentUser.username) ? currentUser.username : 'Yohannes';
-          greetingEl.innerText = `Welcome back, ${uName}!`;
+          if (currentUser && currentUser.username) {
+            const isYo = (currentUser.username || '').toLowerCase() === 'yohannes';
+            greetingEl.innerText = `Welcome back, ${isYo ? 'Yohannes' : currentUser.username}!`;
+          } else {
+            greetingEl.innerText = 'Welcome to PENTRAX!';
+          }
         }
         updateLiveDateIndicator();
 
