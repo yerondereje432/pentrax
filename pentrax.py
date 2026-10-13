@@ -3220,6 +3220,30 @@ async def version_detection(live_hosts, timeout, concurrency):
                 entry.risk_level = risk_info["level"]
                 entry.risk_reason = risk_info["reason"]
                 stats["risky_services"] += 1
+                if risk_info.get("level") in ("CRITICAL", "HIGH", "MEDIUM"):
+                    risk_id = f"RISK-{entry.port}"
+                    if not any(v.id == risk_id for v in entry.vulns):
+                        svc_name = entry.service.upper() if (entry.service and entry.service != "unknown") else f"Port {entry.port}"
+                        remediation_text = risk_info["cis"].remediation if (risk_info.get("cis") and getattr(risk_info["cis"], "remediation", None)) else f"Restrict port {entry.port} to trusted networks and apply host firewall rules."
+                        ref_list = [f"CIS Benchmark: {risk_info['cis'].id}"] if (risk_info.get("cis") and getattr(risk_info["cis"], "id", None)) else []
+                        vuln = Vulnerability(
+                            id=risk_id,
+                            title=f"{svc_name} - {risk_info['reason']}",
+                            description=risk_info["reason"],
+                            risk_level=risk_info["level"],
+                            affected_service=entry.service,
+                            affected_port=entry.port,
+                            evidence=f"Service exposed on port {entry.port}/{entry.protocol}: {risk_info['reason']}",
+                            remediation=remediation_text,
+                            references=ref_list,
+                            category="MISCONFIG"
+                        )
+                        if risk_info.get("cvss"):
+                            vuln.cvss = risk_info["cvss"]
+                        if risk_info.get("cis"):
+                            vuln.cis = risk_info["cis"]
+                        entry.vulns.append(vuln)
+                        stats["vulns_found"] += 1
             
             return ip, entry
 
@@ -4451,7 +4475,7 @@ def export_html(data, path):
 </tr>""")
 
     html = f"""<!doctype html><html><head><meta charset="utf-8">
-<title>Yerscan Report — {_e(data['target'])}</title>
+<title>Pentrax Report — {_e(data['target'])}</title>
 <style>
 body{{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0f1419;color:#e6e6e6;padding:20px;margin:0}}
 h1{{color:#4dd0e1;font-size:28px}} .meta{{color:#888;font-size:13px;margin-bottom:20px}}
@@ -4620,9 +4644,9 @@ def export_markdown(data, path):
 
 def run_self_tests():
     """Run automated self-tests to validate scanner functionality."""
-    print(f"\n{C.BOLD}{C.CY}{'═' * 60}{C.E}")
-    print(f"  {C.BOLD}PENTRAX v{VERSION} — Self-Test Suite{C.E}")
-    print(f"{C.BOLD}{C.CY}{'═' * 60}{C.E}\n")
+    print(f"\n{C.BOLD}{C.R}{'═' * 60}{C.E}")
+    print(f"  {C.BOLD}{C.R}PENTRAX v{VERSION} — Self-Test Suite{C.E}")
+    print(f"{C.BOLD}{C.R}{'═' * 60}{C.E}\n")
     
     passed = 0
     failed = 0
@@ -4768,13 +4792,13 @@ def print_banner():
     caps_str = " · ".join(capabilities)
     
     print(f"""
-{C.CY}{C.BOLD}  ╔══════════════════════════════════════════════════════════════════════╗
+{C.R}{C.BOLD}  ╔══════════════════════════════════════════════════════════════════════╗
   ║                                                                      ║
-  ║   ░█░█░█▀▀░█▀▄░█▀▀░█▀▀░█▀█░█▀█░█▀▀  v{VERSION} — Production Grade  ║
-  ║   ░░█░░█▀▀░█▀▄░▀▀█░█░░░█▀█░█░█░█▀▀                              ║
-  ║   ░░▀░░▀▀▀░▀░▀░▀▀▀░▀▀▀░▀░▀░▀░▀░▀▀▀                              ║
+  ║   ░█▀█░█▀▀░█▄░█░▀█▀░█▀▄░█▀█░█░█  v{VERSION} — Production Grade            ║
+  ║   ░█▀▀░█▀▀░█░▀█░░█░░█▀▄░█▀█░░█░                                      ║
+  ║   ░▀░░░▀▀▀░▀░░▀░░▀░░▀░▀░▀░▀░▀░▀                                      ║
   ║                                                                      ║
-  ║   SYN/ACK/FIN/XMAS/NULL · CVE+CVSS · CIS · Plugins · Resume · IPv6 ║
+  ║   SYN/ACK/FIN/XMAS/NULL · CVE+CVSS · CIS · Plugins · Resume · IPv6   ║
   ╚══════════════════════════════════════════════════════════════════════╝{C.E}
   
   {C.BOLD}Privileges:{C.E} {root_status}  {C.BOLD}Capabilities:{C.E} {caps_str}
@@ -5276,6 +5300,30 @@ async def amain(args, event_callback=None):
         info = host_info.get(ip, {"mac":"","risk_score":0,"risk_level":"LOW","vulns":[]})
         os_hint = results[ip][0].os_hint if results[ip] else ""
         host_paths, host_exploit_score = analyze_attack_paths(results[ip], os_hint, verifications.get(ip, {}))
+        
+        # Populate attack paths into info["vulns"] so they are reflected in JSON and reports
+        for ap in host_paths:
+            ap_id = f"PATH-{ap['port']}"
+            if not any((getattr(v, 'id', '') == ap_id or (isinstance(v, dict) and v.get('id') == ap_id)) for v in info["vulns"]):
+                sev = "CRITICAL" if ap["risk_score"] >= 80 else ("HIGH" if ap["risk_score"] >= 50 else "MEDIUM")
+                ap_vuln = Vulnerability(
+                    id=ap_id,
+                    title=f"Attack Vector: {ap.get('service', 'Service Exploit')}",
+                    description=f"Viable attack chain identified: {' → '.join(ap.get('attack_chains', [])[:1])}. Campaigns: {', '.join(ap.get('campaigns', [])[:2])}.",
+                    risk_level=sev,
+                    affected_service=str(ap.get("port")),
+                    affected_port=int(ap.get("port", 0)),
+                    evidence=f"Feasibility: {ap.get('feasibility', 'N/A')}, Exploit tools: {', '.join(ap.get('exploit_tools', [])[:2])}. Status: {ap.get('status', 'POTENTIAL')}",
+                    remediation=f"Prioritize remediation (Priority {ap.get('remediation_priority', 1)}). Block external access to port {ap.get('port')} and apply patches.",
+                    references=ap.get("mitre_techniques", []),
+                    category="ATTACK-PATH"
+                )
+                ap_cvss = CVSSScore()
+                ap_cvss.base_score = round(ap["risk_score"] / 10.0, 1)
+                ap_cvss.severity = sev
+                ap_vuln.cvss = ap_cvss
+                info["vulns"].append(ap_vuln)
+
         export_data["results"][ip] = {
             "mac": info["mac"],
             "risk_score": info["risk_score"],
@@ -5285,6 +5333,10 @@ async def amain(args, event_callback=None):
             "attack_paths": host_paths,
             "exploit_score": round(host_exploit_score, 1)
         }
+    
+    total_findings_count = sum(len(h.get("vulns", [])) for h in export_data["results"].values())
+    if total_findings_count > export_data["vulns_found"]:
+        export_data["vulns_found"] = total_findings_count
 
     files_written = []
     try:
@@ -5325,6 +5377,8 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("target", nargs="?", help="Target: CIDR, IP, or hostname")
+    parser.add_argument("-t", "--target-opt", dest="target_opt", help="Target: CIDR, IP, or hostname (optional flag)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose audit logging")
     parser.add_argument("-p", "--ports", default="all",
                         help="TCP Ports: 'all' (1-65535), '1-1024', '22,80,443'")
     parser.add_argument("--top", type=int, default=0,
@@ -5430,6 +5484,8 @@ def main():
                         help="Verify vulnerabilities with safe PoC checks (non-destructive)")
 
     args = parser.parse_args()
+    if not args.target and getattr(args, "target_opt", None):
+        args.target = args.target_opt
 
     # Self-test mode
     if args.self_test:
