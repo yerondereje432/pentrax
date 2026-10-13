@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 
 # Pentrax dashboard
 
@@ -15,7 +14,15 @@ python3 app.py
 
 Open `http://127.0.0.1:5000`. The dashboard looks for `*.json` reports in `reports/` by default. A small mixed-risk sample report is included at `reports/sample_report.json`. You can also upload a report from the header.
 
-Set the shared dashboard password and session key before starting Flask. You can copy `.env.example` to `.env`, then export those values in your shell (or use a process manager's environment configuration). The app reads `YERSCAN_PASSWORD` and `YERSCAN_SECRET_KEY`; neither value is stored in source control.
+Set the shared dashboard password and session key before starting Flask. `.env.example` documents the variable names, but the app does **not** load `.env` on its own — the values must be present in the environment of the process that starts Flask:
+
+```bash
+export YERSCAN_PASSWORD='choose-a-strong-shared-password'
+export YERSCAN_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+python3 app.py
+```
+
+The app reads `YERSCAN_PASSWORD` and `YERSCAN_SECRET_KEY` at startup, and neither value is stored in source control. If `YERSCAN_PASSWORD` is unset the login form rejects every attempt with an "authentication is not configured" message; if `YERSCAN_SECRET_KEY` is unset a random key is generated per start, so sessions end on every restart.
 
 Optional scan alerts can be enabled with `YERSCAN_ALERT_WEBHOOK_URL`, set to a Discord or Slack incoming-webhook URL. After a scan or manual upload, the dashboard compares the report with the previous scan of the same target and posts only when a new CRITICAL or HIGH finding is present. If the variable is unset, alerts are skipped.
 
@@ -30,7 +37,7 @@ Routes:
 - `/` — report library, newest first
 - `/reports/<report>.json` — report overview and risk charts
 - `/reports/<report>.json/findings` — flattened findings table
-- # `/reports/<report>.json/findings.csv` — server-side full export endpoint
+- `/reports/<report>.json/findings.csv` — server-side full export endpoint
 
 # ⬡ PENTRAX v8.0
 
@@ -380,4 +387,3 @@ OK (skipped=4)
 <div align="center">
   <sub>PENTRAX v8.0 • Engineered for Ethical Hackers & Security Researchers • MIT License</sub>
 </div>
->>>>>>> origin/main
