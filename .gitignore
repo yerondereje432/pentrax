@@ -1,42 +1,107 @@
-# Python bytecode & cache
+# ==========================================
+# Python Bytecode, Builds & Package Artifacts
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+*.manifest
+*.spec
 
+# ==========================================
 # Virtual Environments
+# ==========================================
 .venv/
 venv/
 env/
 ENV/
 env.bak/
 venv.bak/
+ENV*/
 
-# Testing, logs & coverage
+# ==========================================
+# Testing, Coverage & Static Analysis Cache
+# ==========================================
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
+nosetests.xml
 htmlcov/
+.cache/
+.mypy_cache/
+.ruff_cache/
 *.log
 
-# Scan assessment results & reports
+# ==========================================
+# PENTRAX Scan Outputs, Artifacts & Reports
+# ==========================================
 scans/*
 !scans/.gitkeep
-yerscan_*.json
-yerscan_*.csv
-yerscan_*.html
-pentrax_*.json
-pentrax_*.csv
-pentrax_*.html
+data/*
+!data/.gitkeep
+
+# CLI generated scan exports (all formats)
+pentrax_*
+yerscan_*
+scan_*
 *.dump
 *.pcap
 *.pcapng
+*.cap
 
-# Environment & local secrets
+# Checkpoints and Resume State
+*.checkpoint
+*.chk
+*checkpoint*.json
+
+# ==========================================
+# Databases & Local SQLite State
+# ==========================================
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ==========================================
+# Secrets, Environment & Cryptographic Keys
+# ==========================================
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*.cer
+*.csr
+*.ca-bundle
+id_rsa*
+id_ed25519*
+*token*.txt
+secrets/
 
-# IDEs & Editor configurations
+# ==========================================
+# IDEs & Code Editor Configurations
+# ==========================================
 .vscode/
 .idea/
 *.swp
@@ -44,15 +109,18 @@ pentrax_*.html
 *~
 *.sublime-workspace
 *.sublime-project
+*.code-workspace
+.zed/
 
-# Databases
-*.db
-*.db-shm
-*.db-wal
-*.sqlite
-*.sqlite3
-
-# Operating System files
+# ==========================================
+# Operating System Artifacts
+# ==========================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
-
+desktop.ini
+*.directory
