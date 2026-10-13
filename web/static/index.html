@@ -229,7 +229,7 @@
         <!-- Welcome Header Banner -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 class="text-2xl font-black text-white tracking-tight">Welcome back, Yohannes!</h1>
+            <h1 id="dash-user-greeting" class="text-2xl font-black text-white tracking-tight">Welcome back, Yohannes!</h1>
             <p class="text-xs text-slate-400 mt-1">Here&apos;s what happened with your attack surface while you were away.</p>
           </div>
 
@@ -1558,6 +1558,10 @@
         }
       });
 
+      if (viewName === 'dashboard') {
+        loadDashboardStats();
+      }
+
       if (viewName === 'attack-surface') {
         setTimeout(renderAttackGraph, 100);
       }
@@ -1708,46 +1712,65 @@
         if (!res.ok) return;
         const stats = await res.json();
 
-        // 1. KPI Metric Cards
+        // 1. User Greeting & Live Date Indicator
+        const greetingEl = document.getElementById('dash-user-greeting');
+        if (greetingEl) {
+          const uName = (currentUser && currentUser.username) ? currentUser.username : 'Yohannes';
+          greetingEl.innerText = `Welcome back, ${uName}!`;
+        }
+        updateLiveDateIndicator();
+
+        // 2. KPI Metric Cards
         const kpiAssets = document.getElementById('kpi-dash-assets');
         const kpiAssessments = document.getElementById('kpi-dash-assessments');
         const kpiVulns = document.getElementById('kpi-dash-vulns');
         const kpiProgress = document.getElementById('kpi-dash-progress');
 
-        if (kpiAssets) kpiAssets.innerText = stats.assets_assessed != null ? stats.assets_assessed : 12;
-        if (kpiAssessments) kpiAssessments.innerText = stats.completed_assessments != null ? stats.completed_assessments : 8;
-        if (kpiVulns) kpiVulns.innerText = stats.open_vulnerabilities != null ? stats.open_vulnerabilities : 47;
-        if (kpiProgress) kpiProgress.innerText = stats.remediation_progress != null ? `${stats.remediation_progress}%` : '62%';
+        if (kpiAssets) kpiAssets.innerText = stats.assets_assessed != null ? stats.assets_assessed : 0;
+        if (kpiAssessments) kpiAssessments.innerText = stats.completed_assessments != null ? stats.completed_assessments : 0;
+        if (kpiVulns) kpiVulns.innerText = stats.open_vulnerabilities != null ? stats.open_vulnerabilities : 0;
+        if (kpiProgress) kpiProgress.innerText = stats.remediation_progress != null ? `${stats.remediation_progress}%` : '100%';
+
+        // KPI Deltas
+        const dAssets = document.getElementById('kpi-dash-assets-delta');
+        const dAssessments = document.getElementById('kpi-dash-assessments-delta');
+        const dVulns = document.getElementById('kpi-dash-vulns-delta');
+        const dProgress = document.getElementById('kpi-dash-progress-delta');
+
+        if (dAssets && stats.assets_delta) dAssets.innerText = stats.assets_delta;
+        if (dAssessments && stats.assessments_delta) dAssessments.innerText = stats.assessments_delta;
+        if (dVulns && stats.vulns_delta) dVulns.innerText = stats.vulns_delta;
+        if (dProgress && stats.progress_delta) dProgress.innerText = stats.progress_delta;
 
         // Center doughnut count
         const doughnutCount = document.getElementById('chart-doughnut-center-count');
-        if (doughnutCount) doughnutCount.innerText = stats.open_vulnerabilities != null ? stats.open_vulnerabilities : 47;
+        if (doughnutCount) doughnutCount.innerText = stats.open_vulnerabilities != null ? stats.open_vulnerabilities : 0;
 
-        // 2. Severity Doughnut Chart & Custom Legend
+        // 3. Severity Doughnut Chart & Custom Legend
         renderSeverityDoughnut(stats.vulns_by_severity || {});
 
-        // 3. 7-Day Risk Trend Chart
+        // 4. 7-Day Risk Trend Chart
         renderRiskTrendChart(stats.risk_trend_7d || {});
 
-        // 4. Top Vulnerable Assets List
+        // 5. Top Vulnerable Assets List
         renderTopVulnerableAssets(stats.top_vulnerable_assets || []);
 
-        // 5. Recent Assessments Table
+        // 6. Recent Assessments Table
         renderRecentAssessmentsTable(stats.recent_assessments || []);
 
-        // 6. Recent Findings Feed
+        // 7. Recent Findings Feed
         renderRecentFindingsFeed(stats.recent_findings || []);
 
-        // 7. Activity Counters
+        // 8. Activity Counters
         const actCounts = stats.activity_counts || {};
         const actRun = document.getElementById('act-running-count');
         const actQue = document.getElementById('act-queued-count');
         const actCom = document.getElementById('act-completed-count');
         const actFail = document.getElementById('act-failed-count');
 
-        if (actRun) actRun.innerText = actCounts.running != null ? actCounts.running : 2;
-        if (actQue) actQue.innerText = actCounts.queued != null ? actCounts.queued : 1;
-        if (actCom) actCom.innerText = actCounts.completed != null ? actCounts.completed : 8;
+        if (actRun) actRun.innerText = actCounts.running != null ? actCounts.running : 0;
+        if (actQue) actQue.innerText = actCounts.queued != null ? actCounts.queued : 0;
+        if (actCom) actCom.innerText = actCounts.completed != null ? actCounts.completed : 0;
         if (actFail) actFail.innerText = actCounts.failed != null ? actCounts.failed : 0;
 
       } catch (err) {
@@ -1759,25 +1782,25 @@
       const canvas = document.getElementById('chart-severity-doughnut');
       if (!canvas || typeof Chart === 'undefined') return;
 
-      const crit = vulns.CRITICAL != null ? vulns.CRITICAL : 8;
-      const high = vulns.HIGH != null ? vulns.HIGH : 14;
-      const med = vulns.MEDIUM != null ? vulns.MEDIUM : 18;
-      const low = vulns.LOW != null ? vulns.LOW : 7;
+      const crit = vulns.CRITICAL != null ? vulns.CRITICAL : 0;
+      const high = vulns.HIGH != null ? vulns.HIGH : 0;
+      const med = vulns.MEDIUM != null ? vulns.MEDIUM : 0;
+      const low = vulns.LOW != null ? vulns.LOW : 0;
       const total = crit + high + med + low;
 
       // Update legend items
-      const cP = total > 0 ? Math.round((crit / total) * 100) : 17;
-      const hP = total > 0 ? Math.round((high / total) * 100) : 30;
-      const mP = total > 0 ? Math.round((med / total) * 100) : 38;
-      const lP = total > 0 ? Math.round((low / total) * 100) : 15;
+      const cP = total > 0 ? Math.round((crit / total) * 100) : 0;
+      const hP = total > 0 ? Math.round((high / total) * 100) : 0;
+      const mP = total > 0 ? Math.round((med / total) * 100) : 0;
+      const lP = total > 0 ? Math.round((low / total) * 100) : 0;
 
       document.getElementById('leg-count-critical').innerText = `${crit} (${cP}%)`;
       document.getElementById('leg-count-high').innerText = `${high} (${hP}%)`;
       document.getElementById('leg-count-medium').innerText = `${med} (${mP}%)`;
       document.getElementById('leg-count-low').innerText = `${low} (${lP}%)`;
 
-      const displayData = [crit, high, med, low];
-      const displayColors = ['#ef4444', '#f97316', '#eab308', '#3b82f6'];
+      const displayData = total > 0 ? [crit, high, med, low] : [0, 0, 0, 1];
+      const displayColors = total > 0 ? ['#ef4444', '#f97316', '#eab308', '#3b82f6'] : ['#334155'];
 
       if (severityChartInstance) {
         severityChartInstance.data.datasets[0].data = displayData;
@@ -1902,33 +1925,34 @@
       if (!container) return;
 
       if (!assets || assets.length === 0) {
-        assets = [
-          { name: 'Web Application', ip: '192.168.1.100', count: 12, icon: 'fa-globe', color: 'red' },
-          { name: 'API Server', ip: '192.168.1.105', count: 9, icon: 'fa-cube', color: 'orange' },
-          { name: 'Database Server', ip: '192.168.1.110', count: 7, icon: 'fa-database', color: 'amber' },
-          { name: 'Internal Portal', ip: '192.168.1.120', count: 5, icon: 'fa-network-wired', color: 'blue' }
-        ];
+        container.innerHTML = `
+          <div class="p-5 text-center text-slate-500 bg-[#0d121d] rounded-xl border border-slate-800/60">
+            <i class="fa-solid fa-server text-xl mb-1.5 text-slate-600 block"></i>
+            <span class="text-xs">No assets recorded yet.</span>
+          </div>
+        `;
+        return;
       }
 
       let html = '';
       assets.slice(0, 4).forEach(a => {
-        const color = a.color || (a.count >= 10 ? 'red' : a.count >= 8 ? 'orange' : a.count >= 6 ? 'amber' : 'blue');
+        const color = a.color || (a.crit_count > 0 ? 'red' : (a.high_count > 0 ? 'orange' : (a.count >= 6 ? 'amber' : 'blue')));
         const badgeClasses = {
           red: 'bg-red-950 text-pentrax-red border-red-500/40',
           orange: 'bg-orange-950 text-orange-400 border-orange-500/40',
           amber: 'bg-amber-950 text-amber-400 border-amber-500/40',
           blue: 'bg-blue-950 text-blue-400 border-blue-500/40'
-        }[color];
+        }[color] || 'bg-slate-800 text-slate-300 border-slate-700';
 
         const iconBg = {
           red: 'bg-red-950/40 text-red-400',
           orange: 'bg-orange-950/40 text-orange-400',
           amber: 'bg-amber-950/40 text-amber-400',
           blue: 'bg-blue-950/40 text-blue-400'
-        }[color];
+        }[color] || 'bg-slate-800/40 text-slate-400';
 
         html += `
-          <div class="flex items-center justify-between p-2.5 rounded-xl bg-[#0d121d] border border-slate-800/60 hover:border-slate-700 transition">
+          <div onclick="switchMainView('assets'); const inp = document.getElementById('port-filter-input'); if(inp){ inp.value = '${escapeHtml(a.ip || '')}'; filterPortsTable(); }" class="flex items-center justify-between p-2.5 rounded-xl bg-[#0d121d] border border-slate-800/60 hover:border-slate-700 cursor-pointer transition">
             <div class="flex items-center space-x-3">
               <div class="w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center text-xs">
                 <i class="fa-solid ${a.icon || 'fa-server'}"></i>
@@ -1950,13 +1974,14 @@
       if (!tbody) return;
 
       if (!items || items.length === 0) {
-        items = [
-          { id: 'AS-1024', target: 'app.pentrax-defense.io', type: 'Web', status: 'Completed', started_at: '2025-04-27 10:14' },
-          { id: 'AS-1023', target: 'api.internal.corp', type: 'API', status: 'Running', started_at: '2025-04-27 09:30' },
-          { id: 'AS-1022', target: '192.168.1.0/24', type: 'Network', status: 'Completed', started_at: '2025-04-26 18:45' },
-          { id: 'AS-1021', target: 'portal.domain.com', type: 'Web', status: 'Completed', started_at: '2025-04-26 14:12' },
-          { id: 'AS-1020', target: 'auth.service.net', type: 'API', status: 'Failed', started_at: '2025-04-25 11:05' }
-        ];
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="p-6 text-center text-slate-500 font-mono text-xs">
+              No assessments recorded yet. Click "New Assessment" to launch a scan.
+            </td>
+          </tr>
+        `;
+        return;
       }
 
       let html = '';
@@ -1973,7 +1998,7 @@
           'Failed': '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-950 text-red-400 border border-red-500/30">Failed</span>'
         }[item.status] || `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 text-slate-400">${item.status}</span>`;
 
-        const displayId = item.scan_id ? ('AS-' + (item.scan_id.length > 4 ? item.scan_id.slice(-4).toUpperCase() : item.scan_id)) : (String(item.id).startsWith('AS-') ? item.id : 'AS-' + (1020 + Number(item.id || 0)));
+        const displayId = item.id || (item.scan_id ? ('AS-' + (item.scan_id.length > 4 ? item.scan_id.slice(-4).toUpperCase() : item.scan_id)) : 'AS-1020');
         const targetScanKey = item.scan_id || item.id;
         html += `
           <tr class="hover:bg-slate-800/30 transition">
@@ -1983,7 +2008,7 @@
             <td class="p-3">${statusBadge}</td>
             <td class="p-3 font-mono text-slate-400 text-[11px]">${escapeHtml(item.started_at)}</td>
             <td class="p-3 text-right">
-              <button onclick="switchMainView('assessments'); viewScanHistoryItem('${targetScanKey}')" class="px-2 py-1 rounded bg-[#0d121d] hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-slate-800">
+              <button onclick="switchMainView('assessments'); viewScanHistoryItem('${targetScanKey}')" class="px-2 py-1 rounded bg-[#0d121d] hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-slate-800 transition">
                 View Report
               </button>
             </td>
@@ -1998,12 +2023,13 @@
       if (!container) return;
 
       if (!findings || findings.length === 0) {
-        findings = [
-          { severity: 'CRITICAL', title: 'SQL Injection in Authentication', target: '192.168.1.100:443' },
-          { severity: 'HIGH', title: 'Outdated OpenSSL Service (Heartbleed)', target: '192.168.1.105:8443' },
-          { severity: 'MEDIUM', title: 'Permissive CORS Wildcard Policy', target: '192.168.1.105:8080' },
-          { severity: 'LOW', title: 'Missing HSTS Security Header', target: '192.168.1.120:80' }
-        ];
+        container.innerHTML = `
+          <div class="p-5 text-center text-slate-500 bg-[#0d121d] rounded-xl border border-slate-800/60">
+            <i class="fa-solid fa-shield-halved text-xl mb-1.5 text-slate-600 block"></i>
+            <span class="text-xs">No active vulnerabilities recorded yet.</span>
+          </div>
+        `;
+        return;
       }
 
       let html = '';
@@ -2257,6 +2283,8 @@
           document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>STOPPED</span>`;
           document.getElementById('hud-status-badge').className = 'px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-rose-950/80 text-rose-400 border border-rose-500/40 flex items-center space-x-1.5';
         }
+        loadDashboardStats();
+      }
       } else if (ev.type === 'log') {
         const terminal = document.getElementById('terminal-container');
         const line = document.createElement('div');
