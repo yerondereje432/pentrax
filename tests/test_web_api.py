@@ -343,6 +343,70 @@ class TestWebAPI(unittest.TestCase):
         self.assertIsInstance(data["vulns_by_severity"], dict)
         self.assertIsInstance(data["top_services"], list)
 
+    def test_verify_node_endpoint(self):
+        """POST /api/verify-node safely probes target reachability and returns reproducible cURL."""
+        resp = self.client.post("/api/verify-node", json={"host": "127.0.0.1", "port": 80, "service": "http"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["host"], "127.0.0.1")
+        self.assertEqual(data["port"], 80)
+        self.assertIn("reachable", data)
+        self.assertIn("latency_ms", data)
+        self.assertIn("safe_curl", data)
+        self.assertIn("remediation", data)
+        self.assertIn("mitre_technique", data)
+
+    def test_schedules_crud_endpoints(self):
+        """Schedules CRUD creates, lists, triggers, and deletes automated perimeter monitors."""
+        # Create
+        create_resp = self.client.post("/api/schedules", json={
+            "name": "HQ Perimeter Audit",
+            "target": "10.0.0.1",
+            "ports": "top100",
+            "interval_minutes": 1440,
+            "webhook_url": "https://example.com/webhook"
+        })
+        self.assertEqual(create_resp.status_code, 201)
+        sched_id = create_resp.json()["id"]
+
+        # List
+        list_resp = self.client.get("/api/schedules")
+        self.assertEqual(list_resp.status_code, 200)
+        schedules = list_resp.json()
+        self.assertTrue(any(s["id"] == sched_id for s in schedules))
+
+        # Trigger
+        trigger_resp = self.client.post(f"/api/schedules/{sched_id}/trigger")
+        self.assertEqual(trigger_resp.status_code, 200)
+        self.assertEqual(trigger_resp.json()["status"], "triggered")
+
+        # Delete
+        del_resp = self.client.delete(f"/api/schedules/{sched_id}")
+        self.assertEqual(del_resp.status_code, 200)
+        self.assertEqual(del_resp.json()["status"], "deleted")
+
+    def test_export_pdf_dossier_format(self):
+        """GET /api/scans/{scan_id}/export/pdf serves print-ready CISO Executive Dossier."""
+        instance = scan_manager.create_scan({"target": "127.0.0.1"})
+        instance.result = {
+            "target": "127.0.0.1",
+            "scan_time": "2026-10-12 12:00:00",
+            "duration_seconds": 1.2,
+            "scan_type": "connect",
+            "total_open_ports": 1,
+            "results": {
+                "127.0.0.1": {
+                    "risk_level": "HIGH",
+                    "ports": [{"port": 80, "service": "http", "state": "open", "risk_level": "HIGH"}]
+                }
+            }
+        }
+        resp = self.client.get(f"/api/scans/{instance.id}/export/pdf")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("ENTERPRISE ATTACK SURFACE & THREAT DOSSIER", resp.text)
+        self.assertIn("TLP:AMBER", resp.text)
+        self.assertIn("@media print", resp.text)
+
 
 if __name__ == "__main__":
     unittest.main()
