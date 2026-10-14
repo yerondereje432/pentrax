@@ -1,10 +1,10 @@
 # ⬡ PENTRAX v8.0
 ### **ENTERPRISE WEB VULNERABILITY ASSESSMENT & OFFENSIVE AUDIT PLATFORM**
 
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Framework](https://img.shields.io/badge/engine-AsyncIO%20%7C%20Starlette-crimson.svg)]()
-[![Build Status](https://img.shields.io/badge/tests-57%2F57%20passing-brightgreen.svg)]()
+[![PENTRAX CI](https://github.com/yerondereje432/yerscan/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yerondereje432/yerscan/actions/workflows/ci.yml)
 [![Security Compliance](https://img.shields.io/badge/standards-OWASP%20%7C%20CIS%20%7C%20MITRE-red.svg)]()
 
 > **PENTRAX** is a next-generation, high-concurrency vulnerability assessment platform engineered for cybersecurity researchers, penetration testers, and DevSecOps professionals. It bridges the gap between low-level network discovery, deep web application DAST (Dynamic Application Security Testing), SSL/TLS cryptographic auditing, and threat-actor intelligence mapping in a unified, modern web operations console.
@@ -185,9 +185,9 @@ Security practitioners and red-team operators utilize PENTRAX across every stage
 ## 🚀 Quick Start & Setup
 
 ### Prerequisites
-- **Python**: Version 3.8 or higher.
+- **Python**: Version 3.11 or higher (required by the Starlette web engine).
 - **Dependencies**: None for the core CLI (uses pure Python standard library!).
-- **Web Console**: Requires `starlette` and `uvicorn` (pre-installed or installable via `pip install starlette uvicorn`).
+- **Web Console**: Requires `starlette`, `uvicorn`, and `PyYAML` (installable via `pip install -r requirements.txt`).
 
 ```bash
 # Clone the repository
@@ -211,6 +211,9 @@ python3 run_server.py --host 127.0.0.1 --port 8080
 # Or Elevated Mode (Unlocks Stealth SYN / ACK / FIN / XMAS Scans)
 sudo python3 run_server.py --host 127.0.0.1 --port 8080
 ```
+
+> [!NOTE]
+> **Default Credentials (first launch only)**: a fresh database seeds three demo accounts — `admin` / `pentrax1337` (admin), `yohannes` / `pentrax1337` (admin), and `operator` / `operator123` (operator). Set the `PENTRAX_ADMIN_PASSWORD` environment variable **before first launch** to override the admin passwords (see `docker-compose.yml`). Delete `pentrax.db` and restart to re-seed. Change these on any real deployment.
 
 1. Open your browser and navigate to **`http://127.0.0.1:8080`**.
 2. Click **New Assessment** in the upper-right corner.
@@ -293,9 +296,12 @@ python3 pentrax.py 10.0.0.0/24 -p 22,80,443,3306 --exclude 10.0.0.1
 
 ## 🧪 Verification & Test Suite
 
-PENTRAX includes a comprehensive unit and integration test suite with **57 automated tests** covering core network engines, packet reassembly, DAST fuzzing, SSL handshake parsing, and SSRF defenses:
+PENTRAX includes a comprehensive unit and integration test suite with **87 automated tests** covering core network engines, packet reassembly, DAST fuzzing, SSL handshake parsing, and SSRF defenses:
 
 ```bash
+# Install runtime dependencies plus httpx2 (test-only HTTP client required by the web API tests)
+pip install -r requirements.txt httpx2
+
 # Run complete test suite
 python3 -m unittest discover -s tests -v
 ```
@@ -310,7 +316,7 @@ test_export_scan_formats (test_web_api.TestWebAPI) ... ok
 test_websocket_sync (test_web_api.TestWebAPI) ... ok
 ...
 ----------------------------------------------------------------------
-Ran 57 tests in 0.739s
+Ran 87 tests in 12.9s
 
 OK (skipped=4)
 ```
