@@ -200,18 +200,28 @@ class DatabaseManager:
             # Seed Default Accounts if users table is empty
             cursor.execute("SELECT COUNT(*) FROM users;")
             if cursor.fetchone()[0] == 0:
-                admin_hash, admin_salt = hash_password("pentrax1337")
+                # Admin password is configurable via the PENTRAX_ADMIN_PASSWORD
+                # environment variable (see docker-compose.yml). Falls back to
+                # the documented demo default 'pentrax1337'.
+                admin_password = os.getenv("PENTRAX_ADMIN_PASSWORD", "pentrax1337")
+                if admin_password == "pentrax1337":
+                    logger.warning(
+                        "Database seeded with default credentials (admin / 'pentrax1337'). "
+                        "Set PENTRAX_ADMIN_PASSWORD to override before real deployments."
+                    )
+                admin_hash, admin_salt = hash_password(admin_password)
                 cursor.execute("""
                 INSERT INTO users (username, password_hash, salt, role, created_at)
                 VALUES (?, ?, ?, 'admin', datetime('now'));
                 """, ("admin", admin_hash, admin_salt))
 
-                yo_hash, yo_salt = hash_password("pentrax1337")
+                # Second demo admin shares the same env-configurable password.
+                yo_hash, yo_salt = hash_password(admin_password)
                 cursor.execute("""
                 INSERT INTO users (username, password_hash, salt, role, created_at)
                 VALUES (?, ?, ?, 'admin', datetime('now'));
                 """, ("yohannes", yo_hash, yo_salt))
-                
+
                 # Seed a default demo operator
                 op_hash, op_salt = hash_password("operator123")
                 cursor.execute("""
