@@ -197,35 +197,32 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cve_severity ON cve_catalog(severity);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules(next_run_at, enabled);")
 
-            # Seed default accounts only when the users table is empty.
-            # Set PENTRAX_ADMIN_PASSWORD before first initialization.
-            import os
-            admin_password = os.environ.get("PENTRAX_ADMIN_PASSWORD")
-            if not admin_password:
-                raise RuntimeError(
-                    "PENTRAX_ADMIN_PASSWORD must be set before initializing an empty users table."
-                )
-            if admin_password == "pentrax1337":
-                logger.warning(
-                    "PENTRAX_ADMIN_PASSWORD is set to the insecure default 'pentrax1337'. "
-                    "Set a strong, unique password."
-                )
-
+            # Seed Default Accounts if users table is empty
             cursor.execute("SELECT COUNT(*) FROM users;")
             if cursor.fetchone()[0] == 0:
+                # Admin password is configurable via the PENTRAX_ADMIN_PASSWORD
+                # environment variable (see docker-compose.yml). Falls back to
+                # the documented demo default 'pentrax1337'.
+                admin_password = os.getenv("PENTRAX_ADMIN_PASSWORD", "pentrax1337")
+                if admin_password == "pentrax1337":
+                    logger.warning(
+                        "Database seeded with default credentials (admin / 'pentrax1337'). "
+                        "Set PENTRAX_ADMIN_PASSWORD to override before real deployments."
+                    )
                 admin_hash, admin_salt = hash_password(admin_password)
                 cursor.execute("""
                 INSERT INTO users (username, password_hash, salt, role, created_at)
                 VALUES (?, ?, ?, 'admin', datetime('now'));
                 """, ("admin", admin_hash, admin_salt))
 
+                # Second demo admin shares the same env-configurable password.
                 yo_hash, yo_salt = hash_password(admin_password)
                 cursor.execute("""
                 INSERT INTO users (username, password_hash, salt, role, created_at)
                 VALUES (?, ?, ?, 'admin', datetime('now'));
                 """, ("yohannes", yo_hash, yo_salt))
 
-                # Seed a default demo operator (unchanged).
+                # Seed a default demo operator
                 op_hash, op_salt = hash_password("operator123")
                 cursor.execute("""
                 INSERT INTO users (username, password_hash, salt, role, created_at)
