@@ -1207,7 +1207,22 @@
               <input type="checkbox" id="scan-udp" class="rounded text-pentrax-red">
               <span class="text-slate-200">UDP Vulnerability Checks</span>
             </label>
+            <label class="flex items-center space-x-2 p-2 bg-pentrax-950 rounded-lg border border-pentrax-700 cursor-pointer">
+              <input type="checkbox" id="scan-crawl" checked class="rounded text-pentrax-red">
+              <span class="text-slate-200">Web Spider &amp; Route Crawler</span>
+            </label>
+            <label class="flex items-center space-x-2 p-2 bg-pentrax-950 rounded-lg border border-pentrax-700 cursor-pointer">
+              <input type="checkbox" id="scan-fuzz" checked class="rounded text-pentrax-red">
+              <span class="text-slate-200">Active Parameter Fuzzing (Safe XSS &amp; SQLi)</span>
+            </label>
           </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Session Cookie or Auth Header (Optional)</label>
+          <input type="text" id="scan-auth-header" placeholder="e.g., session=abc123xyz or Bearer eyJhbGciOi..."
+            class="w-full px-3 py-2 bg-pentrax-950 border border-pentrax-700 rounded-lg text-xs text-slate-200 focus:outline-none font-mono">
+          <p class="text-[11px] text-slate-400 mt-1">Allows PENTRAX to crawl authenticated portals and audit protected API endpoints.</p>
         </div>
 
         <div class="p-3.5 bg-pentrax-darkred border border-pentrax-red/40 rounded-xl space-y-2">
@@ -2207,6 +2222,18 @@
       const verify = document.getElementById('scan-verify').checked;
       const icmp = document.getElementById('scan-icmp').checked;
       const udp = document.getElementById('scan-udp').checked;
+      const crawl = document.getElementById('scan-crawl') ? document.getElementById('scan-crawl').checked : true;
+      const fuzz = document.getElementById('scan-fuzz') ? document.getElementById('scan-fuzz').checked : true;
+      const authHeaderVal = (document.getElementById('scan-auth-header')?.value || '').trim();
+      let cookie = null;
+      let header = null;
+      if (authHeaderVal) {
+        if (authHeaderVal.startsWith('session=') || authHeaderVal.startsWith('Cookie:') || authHeaderVal.includes('=')) {
+          cookie = authHeaderVal.replace(/^Cookie:\s*/i, '');
+        } else {
+          header = authHeaderVal;
+        }
+      }
       const authorized = document.getElementById('scan-auth').checked;
 
       const payload = {
@@ -2221,6 +2248,10 @@
         verify,
         icmp,
         udp,
+        crawl,
+        fuzz,
+        cookie,
+        header,
         authorized
       };
 
@@ -2316,6 +2347,15 @@
         const count = (parseInt(badge.innerText || '0') || 0) + 1;
         badge.innerText = `${count} Findings`;
         document.getElementById('stat-vulns-found').innerText = count;
+      } else if (ev.type === 'crawler_complete') {
+        const terminal = document.getElementById('terminal-container');
+        if (terminal) {
+          const line = document.createElement('div');
+          line.className = 'text-cyan-400 font-mono text-[11px]';
+          line.innerText = `[SPIDER] Crawled ${ev.pages_crawled} pages on port ${ev.port}: discovered ${ev.urls_count} URLs, ${ev.forms_count} forms.`;
+          terminal.appendChild(line);
+          terminal.scrollTop = terminal.scrollHeight;
+        }
       } else if (ev.type === 'scan_completed') {
         currentScanData = currentScanData || {};
         currentScanData.result = ev.export_data;

@@ -1,0 +1,21 @@
+id: PENTRAX-HTTP-REDIRECT
+name: Unvalidated Open URL Redirection
+severity: MEDIUM
+category: DAST
+http:
+  method: GET
+  paths:
+    - /login?redirect=https://pentrax-redirect-audit.com
+    - /logout?url=https://pentrax-redirect-audit.com
+    - /redirect?target=https://pentrax-redirect-audit.com
+    - /out?link=https://pentrax-redirect-audit.com
+  matchers:
+    - type: status
+      values: [301, 302, 303, 307, 308]
+    - type: word
+      part: header
+      words:
+        - "Location: https://pentrax-redirect-audit.com"
+remediation: Enforce strict URL domain whitelisting and reject arbitrary external redirection destinations.
+sla: 30 Days
+

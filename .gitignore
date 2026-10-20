@@ -55,15 +55,37 @@ scans/*
 !scans/.gitkeep
 data/*
 !data/.gitkeep
+reports/*
+!reports/.gitkeep
 
 # CLI generated scan exports (all formats)
 pentrax_*
 yerscan_*
 scan_*
+real_scan.*
+test.csv
+test.html
+test.json
+test_*.json
+test_*.csv
+test_*.html
+out.txt
+err.txt
+*.out
+*.err
 *.dump
 *.pcap
 *.pcapng
 *.cap
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.pid
+scratch/
+tmp/
+temp/
+it
 
 # Checkpoints and Resume State
 *.checkpoint
