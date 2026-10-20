@@ -1,0 +1,20 @@
+id: PENTRAX-NET-KUBELET
+name: Unauthenticated Kubernetes Kubelet API Exposed
+severity: CRITICAL
+category: NETWORK
+http:
+  method: GET
+  paths:
+    - /pods
+    - /runningpods
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words:
+        - "PodList"
+        - "items"
+      condition: and
+remediation: Set '--anonymous-auth=false' in Kubelet configuration and enforce webhook authentication.
+sla: 48 Hours
+

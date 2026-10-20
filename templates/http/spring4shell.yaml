@@ -1,0 +1,19 @@
+id: PENTRAX-CVE-2022-22965
+name: Spring Framework DataBinder RCE (Spring4Shell)
+severity: CRITICAL
+category: CVE
+http:
+  method: GET
+  paths:
+    - /?class.module.classLoader.URLs%5B0%5D=jar:http://pentrax-audit.sec!/
+  matchers:
+    - type: status
+      values: [400, 500]
+    - type: word
+      words:
+        - "classLoader"
+        - "org.springframework"
+      condition: or
+remediation: Upgrade Spring Framework to versions 5.3.18+, 5.2.20+ or upgrade Tomcat and Java 11+.
+sla: 48 Hours
+

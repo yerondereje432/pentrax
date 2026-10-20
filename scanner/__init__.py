@@ -13,6 +13,8 @@ from .core import (
     VERSION,
     Vulnerability,
 )
+from .crawler import AsyncWebCrawler
+from .fuzzer import ParameterFuzzer
 from .notifier import Notifier, notifier
 from .plugin_loader import PluginManager, YAMLTemplateEngine
 from .recon import PassiveRecon, ReconResult
@@ -43,6 +45,8 @@ __all__ = [
     "HostResult",
     "PluginManager",
     "YAMLTemplateEngine",
+    "AsyncWebCrawler",
+    "ParameterFuzzer",
     "PassiveRecon",
     "ReconResult",
     "CVEFeedUpdater",

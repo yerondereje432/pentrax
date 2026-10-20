@@ -80,8 +80,16 @@ except:
 VERSION = "10.0"
 try:
     from scanner.reporting import generate_executive_summary
+    from scanner.crawler import AsyncWebCrawler
+    from scanner.fuzzer import ParameterFuzzer
+    from scanner.plugin_loader import YAMLTemplateEngine
 except ImportError:
-    pass
+    generate_executive_summary = None
+    AsyncWebCrawler = None
+    ParameterFuzzer = None
+    YAMLTemplateEngine = None
+
+yaml_template_engine = YAMLTemplateEngine() if YAMLTemplateEngine else None
 
 # ═══════════════════════════════════════════════════════════════════
 #  SECTION 2: ENUMS & DATA STRUCTURES
@@ -4068,8 +4076,18 @@ async def deep_enumerate(ip, port, service, timeout):
     
     return {}
 
-async def run_deep_intel(live_hosts, timeout, concurrency, enable_dast=True, enable_ssl_audit=True):
-    """Run deep enumeration, Web DAST, and SSL/TLS audits on all open ports."""
+async def run_deep_intel(
+    live_hosts,
+    timeout,
+    concurrency,
+    enable_dast=True,
+    enable_ssl_audit=True,
+    enable_crawl=True,
+    enable_fuzz=True,
+    cookie=None,
+    custom_header=None,
+):
+    """Run deep enumeration, Web DAST, templates, crawler, fuzzer, and SSL/TLS audits on all open ports."""
     sem = asyncio.Semaphore(concurrency)
     tasks = []
     
@@ -4106,7 +4124,10 @@ async def run_deep_intel(live_hosts, timeout, concurrency, enable_dast=True, ena
 
             # Web DAST Audit (CORS, Security Headers, Sensitive Paths)
             http_ports = {80, 8080, 8000, 8888, 8008, 8081, 8083, 8088, 8180, 9090, 443, 8443}
-            if enable_dast and (entry.port in http_ports or "HTTP" in (entry.service or "").upper()):
+            is_web = entry.port in http_ports or "HTTP" in (entry.service or "").upper()
+            is_tls = entry.port in (443, 8443, 2083, 2087, 2096) or "HTTPS" in (entry.service or "").upper()
+
+            if enable_dast and is_web:
                 dast_vulns, dast_data = await audit_web_dast(ip, entry.port, timeout=min(timeout, 2.5))
                 if dast_vulns:
                     entry.vulns.extend(dast_vulns)
@@ -4123,6 +4144,109 @@ async def run_deep_intel(live_hosts, timeout, concurrency, enable_dast=True, ena
                         })
                 if isinstance(entry.deep, dict):
                     entry.deep["dast"] = dast_data
+
+                # Declarative YAML Vulnerability Template Probes
+                if yaml_template_engine:
+                    try:
+                        tmpl_findings = await yaml_template_engine.run_http_probes(
+                            ip,
+                            port=entry.port,
+                            use_ssl=is_tls,
+                            timeout=min(timeout, 3.0),
+                            cookie=cookie,
+                            custom_header=custom_header,
+                        )
+                        for tf in tmpl_findings:
+                            tvuln = Vulnerability(
+                                id=tf.get("template_id", "PENTRAX-TMPL"),
+                                title=tf.get("title", "Template Vulnerability Finding"),
+                                description=f"Target path {tf.get('path')} matched signature: {tf.get('evidence')}",
+                                risk_level=tf.get("severity", "MEDIUM"),
+                                affected_service="HTTPS" if is_tls else "HTTP",
+                                affected_port=entry.port,
+                                evidence=tf.get("evidence", ""),
+                                remediation=tf.get("remediation", "Review and restrict access to this path."),
+                                remediation_sla=tf.get("remediation_sla", "14 Days"),
+                                category=tf.get("category", "DAST: TEMPLATE"),
+                            )
+                            entry.vulns.append(tvuln)
+                            stats["vulns_found"] += 1
+                            await emit_event("vulnerability_found", {
+                                "ip": ip,
+                                "port": entry.port,
+                                "title": tvuln.title,
+                                "severity": tvuln.risk_level,
+                                "remediation_sla": tvuln.remediation_sla,
+                                "category": tvuln.category,
+                                "description": tvuln.description,
+                            })
+                    except Exception as e:
+                        logger.debug(f"Template probe error on {ip}:{entry.port}: {e}")
+
+                # Web Spider & Link Crawler
+                crawl_data = None
+                if enable_crawl and AsyncWebCrawler:
+                    try:
+                        scheme = "https" if is_tls else "http"
+                        crawler = AsyncWebCrawler(
+                            f"{scheme}://{ip}:{entry.port}",
+                            max_depth=2,
+                            max_pages=25,
+                            timeout=min(timeout, 3.0),
+                            cookie=cookie,
+                            custom_header=custom_header,
+                        )
+                        crawl_data = await crawler.crawl()
+                        if isinstance(entry.deep, dict):
+                            entry.deep["crawl"] = crawl_data
+                        await emit_event("crawler_complete", {
+                            "ip": ip,
+                            "port": entry.port,
+                            "pages_crawled": crawl_data.get("pages_crawled", 0),
+                            "urls_count": len(crawl_data.get("urls_discovered", [])),
+                            "forms_count": len(crawl_data.get("forms_discovered", [])),
+                        })
+                    except Exception as e:
+                        logger.debug(f"Web crawler error on {ip}:{entry.port}: {e}")
+
+                # Active Parameter Fuzzing (Safe Reflected XSS & SQLi checks)
+                if enable_fuzz and ParameterFuzzer and crawl_data:
+                    try:
+                        endpoints = crawl_data.get("parameterized_endpoints", [])
+                        forms = crawl_data.get("forms_discovered", [])
+                        if endpoints or forms:
+                            fuzzer = ParameterFuzzer(
+                                timeout=min(timeout, 3.0),
+                                cookie=cookie,
+                                custom_header=custom_header,
+                            )
+                            fuzz_findings = await fuzzer.fuzz_endpoints(endpoints, forms)
+                            for ff in fuzz_findings:
+                                fvuln = Vulnerability(
+                                    id=ff.get("id", "DAST-FUZZ"),
+                                    title=ff.get("title", "Parameter Fuzzing Finding"),
+                                    description=f"Active parameter fuzzing discovered issue in '{ff.get('parameter')}'",
+                                    risk_level=ff.get("severity", "HIGH"),
+                                    affected_service="HTTPS" if is_tls else "HTTP",
+                                    affected_port=entry.port,
+                                    evidence=ff.get("evidence", ""),
+                                    remediation=ff.get("remediation", "Sanitize and validate parameter input."),
+                                    remediation_sla=ff.get("remediation_sla", "14 Days"),
+                                    category=ff.get("category", "DAST: FUZZ"),
+                                )
+                                entry.vulns.append(fvuln)
+                                stats["vulns_found"] += 1
+                                await emit_event("vulnerability_found", {
+                                    "ip": ip,
+                                    "port": entry.port,
+                                    "title": fvuln.title,
+                                    "severity": fvuln.risk_level,
+                                    "remediation_sla": fvuln.remediation_sla,
+                                    "category": fvuln.category,
+                                    "description": fvuln.description,
+                                })
+                    except Exception as e:
+                        logger.debug(f"Parameter fuzzer error on {ip}:{entry.port}: {e}")
 
             # SSL/TLS Cryptographic Audit
             ssl_ports = {443, 8443, 2083, 2087, 2096, 993, 995, 465, 636}
@@ -5078,12 +5202,20 @@ async def amain(args, event_callback=None):
         
         enable_dast = getattr(args, "dast", True)
         enable_ssl_audit = getattr(args, "ssl_audit", True)
+        enable_crawl = getattr(args, "crawl", True)
+        enable_fuzz = getattr(args, "fuzz", True)
+        cookie = getattr(args, "cookie", None)
+        custom_header = getattr(args, "header", None)
         await run_deep_intel(
             list(results.keys()),
             timeout=5.0,
             concurrency=min(args.concurrency, 100),
             enable_dast=enable_dast,
             enable_ssl_audit=enable_ssl_audit,
+            enable_crawl=enable_crawl,
+            enable_fuzz=enable_fuzz,
+            cookie=cookie,
+            custom_header=custom_header,
         )
         print(f"  {C.G}{C.BOLD}✓ Deep probed {stats['deep_probes']} services{C.E}")
         if stats['vulns_found'] > 0:
@@ -5411,6 +5543,18 @@ def main():
                         help="Enable SSL/TLS cryptographic audit")
     parser.add_argument("--no-ssl-audit", action="store_false", dest="ssl_audit",
                         help="Disable SSL/TLS cryptographic audit")
+    parser.add_argument("--crawl", action="store_true", default=True,
+                        help="Enable Web spider/crawler for link and form discovery")
+    parser.add_argument("--no-crawl", action="store_false", dest="crawl",
+                        help="Disable Web spider/crawler")
+    parser.add_argument("--fuzz", action="store_true", default=True,
+                        help="Enable active parameter fuzzing (safe XSS & SQLi checks)")
+    parser.add_argument("--no-fuzz", action="store_false", dest="fuzz",
+                        help="Disable active parameter fuzzing")
+    parser.add_argument("--cookie", default=None,
+                        help="Session cookie for authenticated web assessment (e.g. 'session=xyz')")
+    parser.add_argument("--header", default=None,
+                        help="Custom HTTP authorization/audit header (e.g. 'Authorization: Bearer xyz')")
     parser.add_argument("--shuffle", action="store_true",
                         help="Randomize port order")
     parser.add_argument("--evasive", action="store_true",

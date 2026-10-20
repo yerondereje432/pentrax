@@ -71,11 +71,29 @@ class YAMLTemplateEngine:
                 pass
         return len(self.templates)
 
-    async def run_http_probes(self, host: str, port: int = 80, use_ssl: bool = False, timeout: float = 3.0) -> List[Dict[str, Any]]:
+    async def run_http_probes(
+        self,
+        host: str,
+        port: int = 80,
+        use_ssl: bool = False,
+        timeout: float = 3.0,
+        cookie: Optional[str] = None,
+        custom_header: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Run all matching HTTP probes against target host and port."""
         findings = []
         scheme = "https" if use_ssl or port in (443, 8443) else "http"
         base_url = f"{scheme}://{host}:{port}"
+
+        extra_headers = {}
+        if cookie:
+            extra_headers["Cookie"] = cookie
+        if custom_header:
+            if ":" in custom_header:
+                hk, hv = custom_header.split(":", 1)
+                extra_headers[hk.strip()] = hv.strip()
+            else:
+                extra_headers["Authorization"] = custom_header
 
         for tmpl in self.templates:
             http_config = tmpl.get("http")
@@ -93,7 +111,7 @@ class YAMLTemplateEngine:
 
                 for p in paths:
                     req_url = f"{base_url}{p if p.startswith('/') else '/' + p}"
-                    res = await self._execute_http(req_url, method, timeout)
+                    res = await self._execute_http(req_url, method, timeout, extra_headers)
                     if not res:
                         continue
 
@@ -113,7 +131,13 @@ class YAMLTemplateEngine:
                         break
         return findings
 
-    async def _execute_http(self, url: str, method: str = "GET", timeout: float = 3.0) -> Optional[Dict[str, Any]]:
+    async def _execute_http(
+        self,
+        url: str,
+        method: str = "GET",
+        timeout: float = 3.0,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Execute non-blocking HTTP probe using asyncio loop executor."""
         loop = asyncio.get_event_loop()
 
@@ -123,9 +147,13 @@ class YAMLTemplateEngine:
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
+                headers = {"User-Agent": "PENTRAX-Vulnerability-Scanner/8.0 (Authorized Security Audit)"}
+                if extra_headers:
+                    headers.update(extra_headers)
+
                 req = urllib.request.Request(
                     url,
-                    headers={"User-Agent": "PENTRAX-Vulnerability-Scanner/8.0 (Authorized Security Audit)"},
+                    headers=headers,
                     method=method
                 )
                 with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
@@ -142,30 +170,38 @@ class YAMLTemplateEngine:
         return await loop.run_in_executor(None, _do_req)
 
     def _eval_matchers(self, response: Dict[str, Any], matchers: List[Dict[str, Any]]) -> bool:
-        """Evaluate matcher conditions against HTTP response status and body."""
+        """Evaluate matcher conditions against HTTP response status, body, and headers."""
         if not matchers:
             return response.get("status") == 200
 
         for m in matchers:
             m_type = m.get("type", "status")
+            part = str(m.get("part", "body")).lower()
+            if part in ("header", "headers"):
+                target_text = "\n".join(f"{k}: {v}" for k, v in response.get("headers", {}).items())
+            else:
+                target_text = response.get("body", "")
+
             if m_type == "status":
                 expected_statuses = m.get("values", [200])
                 if response.get("status") not in expected_statuses:
                     return False
             elif m_type == "word":
                 words = m.get("words", [])
+                if isinstance(words, str):
+                    words = [words]
                 condition = m.get("condition", "and")
-                body = response.get("body", "")
                 if condition == "and":
-                    if not all(w in body for w in words):
+                    if not all(w in target_text for w in words):
                         return False
                 else:
-                    if not any(w in body for w in words):
+                    if not any(w in target_text for w in words):
                         return False
             elif m_type == "regex":
-                patterns = m.get("patterns", [])
-                body = response.get("body", "")
-                if not any(re.search(p, body, re.IGNORECASE) for p in patterns):
+                patterns = m.get("patterns") or m.get("regex") or []
+                if isinstance(patterns, str):
+                    patterns = [patterns]
+                if not any(re.search(p, target_text, re.IGNORECASE) for p in patterns):
                     return False
         return True
 

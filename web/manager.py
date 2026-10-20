@@ -317,6 +317,10 @@ class ScanManager:
             verify=bool(config.get("verify", True)),
             dast=bool(config.get("dast", True)),
             ssl_audit=bool(config.get("ssl_audit", True)),
+            crawl=bool(config.get("crawl", True)),
+            fuzz=bool(config.get("fuzz", True)),
+            cookie=config.get("cookie") or None,
+            header=config.get("header") or None,
             target_ips=config.get("pinned_ips") or None,
         )
 
