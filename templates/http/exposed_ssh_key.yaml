@@ -1,0 +1,19 @@
+id: PENTRAX-HTTP-105
+name: Exposed SSH Private Key File
+severity: CRITICAL
+category: DAST
+http:
+  method: GET
+  paths:
+    - /id_rsa
+    - /.ssh/id_rsa
+    - /id_ed25519
+    - /id_ecdsa
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words: ["BEGIN RSA PRIVATE KEY", "BEGIN OPENSSH PRIVATE KEY", "BEGIN EC PRIVATE KEY"]
+      condition: or
+remediation: Remove private keys from the web root immediately, treat the key as compromised, generate a new key pair and remove the old public key from every server's authorized_keys.
+sla: 24 Hours
