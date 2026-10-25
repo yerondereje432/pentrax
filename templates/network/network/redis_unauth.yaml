@@ -1,0 +1,16 @@
+id: PENTRAX-NET-003
+name: Unauthenticated Redis Server Exposed
+severity: CRITICAL
+cvss: 9.8
+category: NETWORK
+network:
+  - port: 6379
+    protocol: tcp
+    payload: "PING\r\n"
+    matchers:
+      - type: word
+        words:
+          - "+PONG"
+        condition: or
+remediation: Bind Redis to localhost or a private interface (bind 127.0.0.1), enable protected-mode, set a strong requirepass or ACL users, and firewall TCP 6379 from untrusted networks. An unauthenticated PING reply (+PONG) means anyone can read, modify, or delete the stored data.
+sla: 48 Hours
