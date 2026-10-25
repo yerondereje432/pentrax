@@ -1,179 +1,155 @@
 """TLS / SSL Certificate Chain & Cryptographic Security Auditor for PENTRAX."""
 import datetime
-from unittest.mock import patch
-
-import pytest
-
-from scanner.tls_audit import CertReport, TLSAuditor
-
-
-# ---------- helpers ----------
-
-def make_date(days_from_now):
-    dt = datetime.datetime.utcnow() + datetime.timedelta(days=days_from_now)
-    return dt.strftime("%b %d %H:%M:%S %Y GMT")
+import socket
+import ssl
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 
-def make_cert(subject="example.com", issuer="Test CA", days=365, sans=()):
-    return {
-        "subject": ((("commonName", subject),),),
-        "issuer": ((("commonName", issuer),),),
-        "subjectAltName": [("DNS", s) for s in sans],
-        "notBefore": make_date(-10),
-        "notAfter": make_date(days),
-    }
+@dataclass
+class CertReport:
+    host: str
+    port: int
+    subject: str = "Unknown"
+    issuer: str = "Unknown"
+    sans: List[str] = field(default_factory=list)
+    valid_from: Optional[str] = None
+    valid_until: Optional[str] = None
+    expires_in_days: int = 0
+    is_expired: bool = False
+    expiry_warning: bool = False
+    is_self_signed: bool = False
+    key_bits: int = 2048
+    key_type: str = "RSA"
+    weak_key: bool = False
+    tls_version: str = "Unknown"
+    cipher_suite: str = "Unknown"
+    ocsp_stapling: bool = False
+    grade: str = "A"
+    vulnerabilities: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "host": self.host,
+            "port": self.port,
+            "subject": self.subject,
+            "issuer": self.issuer,
+            "sans": self.sans,
+            "valid_from": self.valid_from,
+            "valid_until": self.valid_until,
+            "expires_in_days": self.expires_in_days,
+            "is_expired": self.is_expired,
+            "expiry_warning": self.expiry_warning,
+            "is_self_signed": self.is_self_signed,
+            "key_bits": self.key_bits,
+            "key_type": self.key_type,
+            "weak_key": self.weak_key,
+            "tls_version": self.tls_version,
+            "cipher_suite": self.cipher_suite,
+            "ocsp_stapling": self.ocsp_stapling,
+            "grade": self.grade,
+            "vulnerabilities": self.vulnerabilities,
+        }
 
 
-def parse(cert):
-    report = CertReport(host="test.local", port=443)
-    TLSAuditor()._parse_cert_dict(cert, report)
-    return report
+class TLSAuditor:
+    """Deep TLS / SSL cryptographic auditor using Python standard library ssl."""
+
+    def audit(self, host: str, port: int = 443, timeout: float = 5.0) -> CertReport:
+        report = CertReport(host=host, port=port)
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        try:
+            with socket.create_connection((host, port), timeout=timeout) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                    cert = ssock.getpeercert(binary_form=False)
+                    cipher = ssock.cipher()
+                    report.tls_version = ssock.version() or "TLSv1.2"
+                    if cipher:
+                        report.cipher_suite = cipher[0]
+                        report.key_bits = cipher[2] or 2048
+
+                    if cert:
+                        self._parse_cert_dict(cert, report)
+
+        except Exception as e:
+            report.vulnerabilities.append(f"TLS handshake failure: {str(e)}")
+            report.grade = "F"
+            return report
+
+        # Security evaluation & grading
+        vulns: List[str] = []
+        if report.is_expired:
+            vulns.append("Certificate is EXPIRED")
+        elif report.expiry_warning:
+            vulns.append(f"Certificate expires soon ({report.expires_in_days} days)")
+
+        if report.is_self_signed:
+            vulns.append("Self-signed or untrusted CA certificate")
+
+        if report.key_bits < 2048:
+            report.weak_key = True
+            vulns.append(f"Weak cryptographic key size ({report.key_bits} bits < 2048)")
+
+        if report.tls_version in ("SSLv2", "SSLv3", "TLSv1", "TLSv1.1"):
+            vulns.append(f"Insecure protocol version {report.tls_version} in use")
+
+        if any(weak in report.cipher_suite.upper() for weak in ["RC4", "DES", "3DES", "MD5", "NULL", "EXPORT"]):
+            vulns.append(f"Weak / obsolete cipher suite {report.cipher_suite}")
+
+        report.vulnerabilities = vulns
+
+        # Assign letter grade
+        if report.is_expired or report.weak_key or report.tls_version in ("SSLv2", "SSLv3"):
+            report.grade = "F"
+        elif report.is_self_signed or report.tls_version in ("TLSv1", "TLSv1.1"):
+            report.grade = "C"
+        elif report.expiry_warning or "CBC" in report.cipher_suite:
+            report.grade = "B"
+        elif report.tls_version == "TLSv1.3":
+            report.grade = "A+"
+        else:
+            report.grade = "A"
+
+        return report
+
+    def _parse_cert_dict(self, cert: Dict[str, Any], report: CertReport):
+        # Subject & Issuer
+        subj_parts = [val[0][1] for val in cert.get("subject", []) if val and len(val[0]) > 1]
+        iss_parts = [val[0][1] for val in cert.get("issuer", []) if val and len(val[0]) > 1]
+        report.subject = ", ".join(subj_parts) if subj_parts else "Unknown"
+        report.issuer = ", ".join(iss_parts) if iss_parts else "Unknown"
+
+        # Check self-signed
+        if report.subject and report.issuer and report.subject == report.issuer:
+            report.is_self_signed = True
+
+        # SANs
+        sans = [item[1] for item in cert.get("subjectAltName", []) if item[0] == "DNS"]
+        report.sans = sans
+
+        # Dates
+        not_after = cert.get("notAfter")
+        not_before = cert.get("notBefore")
+        report.valid_from = not_before
+        report.valid_until = not_after
+
+        if not_after:
+            try:
+                # SSL standard date format: 'May 23 12:00:00 2026 GMT'
+                dt_after = datetime.datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
+                now = datetime.datetime.utcnow()
+                diff = dt_after - now
+                report.expires_in_days = diff.days
+                if report.expires_in_days < 0:
+                    report.is_expired = True
+                elif report.expires_in_days < 30:
+                    report.expiry_warning = True
+            except Exception:
+                pass
 
 
-class FakeSock:
-    """Stand-in for a TLS connection, so tests never touch the network."""
-
-    def init(self, cert=None, cipher=None, version=None):
-        self._cert = cert
-        self._cipher = cipher
-        self._version = version
-
-    def enter(self):
-        return self
-
-    def exit(self, *args):
-        return False
-
-    def getpeercert(self, binary_form=False):
-        return self._cert
-
-    def cipher(self):
-        return self._cipher
-
-    def version(self):
-        return self._version
-
-
-class FakeCtx:
-    def init(self, ssock):
-        self._ssock = ssock
-
-    def wrap_socket(self, sock, server_hostname=None):
-        return self._ssock
-
-
-def run_audit(version="TLSv1.2", cipher_name="ECDHE-RSA-AES256-GCM-SHA384",
-              cipher_bits=2048, cert=None):
-    """Run audit() against a fake TLS connection (no network)."""
-    if cert is None:
-        cert = make_cert()
-    ssock = FakeSock(cert, (cipher_name, version, cipher_bits), version)
-
-    with patch("scanner.tls_audit.socket.create_connection",
-               return_value=FakeSock()), \
-         patch("scanner.tls_audit.ssl.create_default_context",
-               return_value=FakeCtx(ssock)):
-        return TLSAuditor().audit("test.local", 443)
-
-
-# ---------- certificate parsing ----------
-
-def test_valid_cert_has_no_flags():
-    r = parse(make_cert(days=365))
-    assert not r.is_expired
-    assert not r.expiry_warning
-    assert not r.is_self_signed
-    assert r.expires_in_days > 300
-
-
-def test_expired_cert_is_flagged():
-    assert parse(make_cert(days=-5)).is_expired
-
-
-def test_cert_expiring_soon_gets_warning():
-    r = parse(make_cert(days=10))
-    assert r.expiry_warning
-    assert not r.is_expired
-
-
-def test_self_signed_detected():
-    assert parse(make_cert(subject="mysite", issuer="mysite")).is_self_signed
-
-
-def test_subject_issuer_and_sans_parsed():
-    r = parse(make_cert(sans=["example.com", "www.example.com"]))
-    assert r.subject == "example.com"
-    assert r.issuer == "Test CA"
-    assert r.sans == ["example.com", "www.example.com"]
-
-
-def test_missing_fields_default_to_unknown():
-    r = parse({})
-    assert r.subject == "Unknown"
-    assert r.issuer == "Unknown"
-
-
-def test_bad_date_does_not_crash():
-    cert = make_cert()
-    cert["notAfter"] = "not a date"
-    parse(cert)
-
-
-# ---------- grading ----------
-
-def test_handshake_failure_gets_F():
-    with patch("scanner.tls_audit.socket.create_connection",
-               side_effect=OSError("connection refused")):
-        r = TLSAuditor().audit("test.local", 443)
-    assert r.grade == "F"
-    assert any("handshake" in v.lower() for v in r.vulnerabilities)
-
-
-def test_expired_cert_gets_F():
-    r = run_audit(cert=make_cert(days=-5))
-    assert r.grade == "F"
-    assert "Certificate is EXPIRED" in r.vulnerabilities
-
-
-def test_sslv3_gets_F():
-    assert run_audit(version="SSLv3").grade == "F"
-
-
-def test_self_signed_gets_C():
-    r = run_audit(cert=make_cert(subject="x", issuer="x"))
-    assert r.grade == "C"
-
-
-def test_tls10_gets_C_and_is_flagged():
-    r = run_audit(version="TLSv1")
-    assert r.grade == "C"
-    assert any("Insecure protocol" in v for v in r.vulnerabilities)
-
-
-def test_expiring_soon_gets_B():
-    assert run_audit(cert=make_cert(days=10)).grade == "B"
-def test_cbc_cipher_gets_B():
-    assert run_audit(cipher_name="ECDHE-RSA-AES256-CBC-SHA").grade == "B"
-
-
-def test_tls12_gets_A():
-    assert run_audit(version="TLSv1.2").grade == "A"
-
-
-def test_tls13_gets_A_plus():
-    assert run_audit(version="TLSv1.3").grade == "A+"
-
-
-def test_weak_cipher_is_flagged():
-    r = run_audit(cipher_name="RC4-MD5")
-    assert any("Weak / obsolete cipher" in v for v in r.vulnerabilities)
-
-
-# ---------- known bug ----------
-
-@pytest.mark.xfail(reason="key_bits uses the symmetric cipher size (256), not the cert key size")
-def test_modern_connection_is_not_flagged_weak_key():
-    r = run_audit(version="TLSv1.3", cipher_name="TLS_AES_256_GCM_SHA384",
-                  cipher_bits=256)
-    assert not r.weak_key
-    assert r.grade == "A+"
+tls_auditor = TLSAuditor()
