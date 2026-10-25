@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ╔════════════════════════════════════════════════════════════════════╗
-║                        PENTRAX v8.0                               ║
+║                        PENTRAX v10.0                              ║
 ║     Professional Grade · Full Feature Parity · Production Ready    ║
 ╚════════════════════════════════════════════════════════════════════╝
 
@@ -4750,7 +4750,7 @@ def generate_markdown(data):
         "- **Web Security Headers**: Enforce `Content-Security-Policy`, `Strict-Transport-Security` (HSTS), and `X-Frame-Options` on web frontends.",
         "- **Access Control**: Restrict administrative panels (SSH, RDP, Redis, MongoDB) behind VPNs or IP allowlists.",
         "",
-        "> *Report generated automatically by PENTRAX v8.0 Enterprise Security Assessment Platform.*",
+        "> *Report generated automatically by PENTRAX v10.0 Enterprise Security Assessment Platform.*",
         ""
     ])
 

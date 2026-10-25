@@ -21,7 +21,7 @@ try:
 except Exception:
     pass
 
-VERSION = "8.0"
+VERSION = "10.0"
 
 
 class PortState(Enum):

@@ -1,4 +1,4 @@
-# ⬡ PENTRAX v8.0
+# ⬡ PENTRAX v10.0
 ### **ENTERPRISE WEB VULNERABILITY ASSESSMENT & OFFENSIVE AUDIT PLATFORM**
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
@@ -336,6 +336,20 @@ OK (skipped=4)
 
 ---
 
+## 👥 Project Team & Authors (INSA Cyber Talent Center)
+
+This project is developed as a Capstone Final Year Project by the Cybersecurity Engineering Team at the **Information Network Security Administration (INSA) – Cyber Talent Center (CTC)**:
+
+| Name | Student ID | Specialization / Role |
+| :--- | :--- | :--- |
+| **Yohannes Garomsa** | `CTC-1368-26` | Core Architecture & Network Reconnaissance |
+| **Yeron Dereje** | `CTC-1355-26` | Project Lead & Full-Stack Security Engineering |
+| **Leyou Tesfahun** | `CTC-1975-26` | Web DAST Engine & Parameter Fuzzing Oracles |
+| **Idris Elmi** | `CTC-424-26` | Threat Intelligence, CVE Feeds & TLS Auditing |
+| **Cipara Yohannes** | `CTC-7659-26` | Declarative YAML Templates & Verification Suite |
+
+---
+
 <div align="center">
-  <sub>PENTRAX v8.0 • Engineered for Ethical Hackers & Security Researchers • MIT License</sub>
+  <sub>PENTRAX v10.0 • Developed at INSA Cyber Talent Center (CTC) • MIT License</sub>
 </div>
