@@ -1,0 +1,22 @@
+id: PENTRAX-HTTP-107
+name: Exposed Spring Boot Actuator Endpoint
+severity: HIGH
+cvss: 7.5
+category: DAST
+http:
+  method: GET
+  paths:
+    - /actuator
+    - /actuator/health
+    - /actuator/info
+    - /actuator/env
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words:
+        - "_links"
+        - "actuator"
+      condition: or
+remediation: Expose only the Actuator endpoints that are required (management.endpoints.web.exposure.include), never expose env or heapdump publicly, and require authentication for all management endpoints.
+sla: 14 Days
