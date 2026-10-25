@@ -24,6 +24,7 @@ class CertReport:
     weak_key: bool = False
     tls_version: str = "Unknown"
     cipher_suite: str = "Unknown"
+    cipher_bits: int = 0
     ocsp_stapling: bool = False
     grade: str = "A"
     vulnerabilities: List[str] = field(default_factory=list)
@@ -46,6 +47,7 @@ class CertReport:
             "weak_key": self.weak_key,
             "tls_version": self.tls_version,
             "cipher_suite": self.cipher_suite,
+            "cipher_bits": self.cipher_bits,
             "ocsp_stapling": self.ocsp_stapling,
             "grade": self.grade,
             "vulnerabilities": self.vulnerabilities,
@@ -70,7 +72,13 @@ class TLSAuditor:
                     report.tls_version = ssock.version() or "TLSv1.2"
                     if cipher:
                         report.cipher_suite = cipher[0]
-                        report.key_bits = cipher[2] or 2048
+                        # cipher[2] is the *symmetric* session-key size
+                        # (e.g. 256 for AES-256, including TLS 1.3 suites),
+                        # NOT the certificate public-key size. Store it
+                        # separately so modern connections are not falsely
+                        # flagged as having a weak (< 2048-bit) cert key.
+                        report.cipher_bits = cipher[2] or 0
+                        self._extract_key_info(ssock, report)
 
                     if cert:
                         self._parse_cert_dict(cert, report)
@@ -90,9 +98,14 @@ class TLSAuditor:
         if report.is_self_signed:
             vulns.append("Self-signed or untrusted CA certificate")
 
-        if report.key_bits < 2048:
+        # Minimum acceptable public-key size depends on the key type:
+        # 2048 bits for RSA/DSA, 224 bits for elliptic-curve keys.
+        key_type_upper = report.key_type.upper()
+        is_ec_key = "EC" in key_type_upper or "ED" in key_type_upper
+        min_key_bits = 224 if is_ec_key else 2048
+        if report.key_bits < min_key_bits:
             report.weak_key = True
-            vulns.append(f"Weak cryptographic key size ({report.key_bits} bits < 2048)")
+            vulns.append(f"Weak cryptographic key size ({report.key_bits} bits < {min_key_bits})")
 
         if report.tls_version in ("SSLv2", "SSLv3", "TLSv1", "TLSv1.1"):
             vulns.append(f"Insecure protocol version {report.tls_version} in use")
@@ -115,6 +128,50 @@ class TLSAuditor:
             report.grade = "A"
 
         return report
+
+    def _extract_key_info(self, ssock: Any, report: CertReport):
+        """Best-effort extraction of the certificate public-key type/size.
+
+        Uses the optional ``cryptography`` package when it is installed.
+        Any failure (package missing, non-DER peer data, unsupported key)
+        leaves the report defaults untouched and never raises.
+        """
+        try:
+            der = ssock.getpeercert(binary_form=True)
+        except Exception:
+            return
+        if not isinstance(der, (bytes, bytearray)) or not der:
+            return
+
+        try:
+            from cryptography import x509
+
+            cert_obj = x509.load_der_x509_certificate(bytes(der))
+            public_key = cert_obj.public_key()
+        except Exception:
+            return
+
+        key_class = type(public_key).__name__
+        if key_class.startswith("RSA"):
+            report.key_type = "RSA"
+        elif key_class.startswith("EllipticCurve"):
+            report.key_type = "EC"
+        elif key_class.startswith("DSA"):
+            report.key_type = "DSA"
+        elif key_class.startswith("Ed25519"):
+            report.key_type = "Ed25519"
+            report.key_bits = 256
+            return
+        elif key_class.startswith("Ed448"):
+            report.key_type = "Ed448"
+            report.key_bits = 448
+            return
+        else:
+            report.key_type = key_class.replace("PublicKey", "") or report.key_type
+
+        key_size = getattr(public_key, "key_size", None)
+        if isinstance(key_size, int) and key_size > 0:
+            report.key_bits = key_size
 
     def _parse_cert_dict(self, cert: Dict[str, Any], report: CertReport):
         # Subject & Issuer
@@ -141,7 +198,8 @@ class TLSAuditor:
             try:
                 # SSL standard date format: 'May 23 12:00:00 2026 GMT'
                 dt_after = datetime.datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
-                now = datetime.datetime.utcnow()
+                dt_after = dt_after.replace(tzinfo=datetime.timezone.utc)
+                now = datetime.datetime.now(datetime.timezone.utc)
                 diff = dt_after - now
                 report.expires_in_days = diff.days
                 if report.expires_in_days < 0:
