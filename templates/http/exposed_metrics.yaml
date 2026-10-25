@@ -1,0 +1,22 @@
+id: PENTRAX-HTTP-106
+name: Exposed Prometheus Metrics Endpoint
+severity: MEDIUM
+cvss: 5.3
+category: DAST
+http:
+  method: GET
+  paths:
+    - /metrics
+    - /actuator/prometheus
+    - /prometheus
+    - /metrics/prometheus
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words:
+        - "# HELP"
+        - "# TYPE"
+      condition: or
+remediation: Restrict the metrics endpoint to the internal monitoring network or require authentication, so internal application, route, and resource-usage details are not disclosed to unauthenticated users.
+sla: 14 Days
