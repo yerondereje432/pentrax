@@ -644,7 +644,7 @@
             </div>
 
             <div class="flex items-center space-x-3">
-              <button id="btn-stop-scan" onclick="stopCurrentScan()" class="px-3.5 py-1.5 bg-red-950 hover:bg-red-900 border border-red-600 text-red-300 text-xs rounded-lg font-bold flex items-center space-x-1.5 transition">
+              <button type="button" id="btn-stop-scan" onclick="stopCurrentScan()" class="px-3.5 py-1.5 bg-red-950 hover:bg-red-900 border border-red-600 text-red-300 text-xs rounded-lg font-bold flex items-center space-x-1.5 transition">
                 <i class="fa-solid fa-hand"></i>
                 <span>Stop Scan</span>
               </button>
@@ -1520,57 +1520,6 @@
   </div>
 
   <!-- ===================================================================== -->
-  <!-- MODAL: DYNAMIC CONFIRMATION DIALOG (CUSTOM CYBER ALERT)              -->
-  <!-- ===================================================================== -->
-  <div id="modal-confirm-dialog" class="fixed inset-0 bg-black/85 backdrop-blur-md z-[999] flex items-center justify-center p-4 hidden transition-all duration-200">
-    <div class="bg-[#0b0f17] border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl shadow-black/80 overflow-hidden transform transition-all scale-95 opacity-0 duration-200" id="modal-confirm-dialog-card">
-      <div class="p-6">
-        <div class="flex items-start space-x-4">
-          <!-- Icon Badge -->
-          <div id="confirm-dialog-icon-bg" class="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 bg-red-950/60 border border-red-500/30 text-red-500 shadow-lg shadow-red-950/50">
-            <i id="confirm-dialog-icon" class="fa-solid fa-triangle-exclamation text-xl"></i>
-          </div>
-          <!-- Header & Content -->
-          <div class="flex-1 min-w-0">
-            <h3 id="confirm-dialog-title" class="text-base font-bold text-white tracking-wide">Confirm Action</h3>
-            <p id="confirm-dialog-message" class="text-xs text-slate-400 mt-1 leading-relaxed">Are you sure you want to proceed with this operation?</p>
-            
-            <!-- Target Item Chip -->
-            <div id="confirm-dialog-item-container" class="mt-3 hidden">
-              <div class="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center space-x-2">
-                <i class="fa-solid fa-crosshairs text-slate-500 text-xs"></i>
-                <code id="confirm-dialog-item-name" class="text-xs font-mono text-red-400 truncate"></code>
-              </div>
-            </div>
-
-            <!-- Caution Note -->
-            <div id="confirm-dialog-warning" class="mt-3 flex items-center space-x-1.5 text-[11px] text-red-400/90 font-medium">
-              <i class="fa-solid fa-circle-exclamation text-[10px]"></i>
-              <span id="confirm-dialog-warning-text">This action is permanent and cannot be undone.</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Action Buttons -->
-      <div class="p-4 bg-[#080b11] border-t border-slate-800/80 flex items-center justify-end space-x-3">
-        <button id="confirm-dialog-cancel-btn" class="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition focus:outline-none">
-          Cancel
-        </button>
-        <button id="confirm-dialog-proceed-btn" class="px-4 py-2 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-bold rounded-xl text-xs shadow-lg shadow-red-900/40 transition flex items-center space-x-2 focus:outline-none">
-          <i id="confirm-dialog-proceed-icon" class="fa-solid fa-trash-can text-xs"></i>
-          <span id="confirm-dialog-proceed-text">Delete</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===================================================================== -->
-  <!-- TOAST NOTIFICATION CONTAINER                                          -->
-  <!-- ===================================================================== -->
-  <div id="toast-container" class="fixed bottom-5 right-5 z-[1000] flex flex-col space-y-2 pointer-events-none max-w-sm w-full"></div>
-
-  <!-- ===================================================================== -->
   <!-- JAVASCRIPT APPLICATION CORE & CONTROLLER                              -->
   <!-- ===================================================================== -->
   <script>
@@ -1585,168 +1534,12 @@
     let activeMainView = 'dashboard';
 
     document.addEventListener('DOMContentLoaded', async () => {
-      initConfirmDialogEvents();
       updateLiveDateIndicator();
       await checkAuthStatus();
       await fetchSystemCapabilities();
       await loadScanHistory();
       await loadDashboardStats();
     });
-
-    // =========================================================================
-    // DYNAMIC CONFIRMATION MODAL & TOAST NOTIFICATION HUB
-    // =========================================================================
-    let confirmDialogResolver = null;
-
-    function showConfirmDialog({
-      title = 'Confirm Action',
-      message = 'Are you sure you want to proceed?',
-      itemName = '',
-      warning = 'This action is permanent and cannot be undone.',
-      confirmText = 'Delete',
-      confirmIcon = 'fa-trash-can',
-      cancelText = 'Cancel',
-      isDanger = true
-    } = {}) {
-      return new Promise((resolve) => {
-        confirmDialogResolver = resolve;
-
-        const modal = document.getElementById('modal-confirm-dialog');
-        const card = document.getElementById('modal-confirm-dialog-card');
-        const titleEl = document.getElementById('confirm-dialog-title');
-        const messageEl = document.getElementById('confirm-dialog-message');
-        const itemContainer = document.getElementById('confirm-dialog-item-container');
-        const itemNameEl = document.getElementById('confirm-dialog-item-name');
-        const warningContainer = document.getElementById('confirm-dialog-warning');
-        const warningTextEl = document.getElementById('confirm-dialog-warning-text');
-        const iconBg = document.getElementById('confirm-dialog-icon-bg');
-        const iconEl = document.getElementById('confirm-dialog-icon');
-        const proceedBtn = document.getElementById('confirm-dialog-proceed-btn');
-        const proceedIcon = document.getElementById('confirm-dialog-proceed-icon');
-        const proceedText = document.getElementById('confirm-dialog-proceed-text');
-        const cancelBtn = document.getElementById('confirm-dialog-cancel-btn');
-
-        if (titleEl) titleEl.textContent = title;
-        if (messageEl) messageEl.textContent = message;
-
-        if (itemName && itemContainer && itemNameEl) {
-          itemNameEl.textContent = itemName;
-          itemContainer.classList.remove('hidden');
-        } else if (itemContainer) {
-          itemContainer.classList.add('hidden');
-        }
-
-        if (warning && warningContainer && warningTextEl) {
-          warningTextEl.textContent = warning;
-          warningContainer.classList.remove('hidden');
-        } else if (warningContainer) {
-          warningContainer.classList.add('hidden');
-        }
-
-        if (proceedText) proceedText.textContent = confirmText;
-        if (proceedIcon) proceedIcon.className = `fa-solid ${confirmIcon} text-xs`;
-        if (cancelBtn) cancelBtn.textContent = cancelText;
-
-        if (iconBg && iconEl && proceedBtn) {
-          if (isDanger) {
-            iconBg.className = 'w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 bg-red-950/60 border border-red-500/30 text-red-500 shadow-lg shadow-red-950/50';
-            iconEl.className = 'fa-solid fa-triangle-exclamation text-xl';
-            proceedBtn.className = 'px-4 py-2 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-bold rounded-xl text-xs shadow-lg shadow-red-900/40 transition flex items-center space-x-2 focus:outline-none';
-          } else {
-            iconBg.className = 'w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 bg-amber-950/60 border border-amber-500/30 text-amber-500 shadow-lg shadow-amber-950/50';
-            iconEl.className = 'fa-solid fa-circle-question text-xl';
-            proceedBtn.className = 'px-4 py-2 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-black font-bold rounded-xl text-xs shadow-lg shadow-amber-900/40 transition flex items-center space-x-2 focus:outline-none';
-          }
-        }
-
-        if (modal && card) {
-          modal.classList.remove('hidden');
-          setTimeout(() => {
-            card.classList.remove('scale-95', 'opacity-0');
-            card.classList.add('scale-100', 'opacity-100');
-            if (proceedBtn) proceedBtn.focus();
-          }, 10);
-        }
-      });
-    }
-
-    function closeConfirmDialog(result = false) {
-      const modal = document.getElementById('modal-confirm-dialog');
-      const card = document.getElementById('modal-confirm-dialog-card');
-      if (card) {
-        card.classList.remove('scale-100', 'opacity-100');
-        card.classList.add('scale-95', 'opacity-0');
-      }
-      setTimeout(() => {
-        if (modal) modal.classList.add('hidden');
-        if (confirmDialogResolver) {
-          confirmDialogResolver(result);
-          confirmDialogResolver = null;
-        }
-      }, 150);
-    }
-
-    function initConfirmDialogEvents() {
-      document.getElementById('confirm-dialog-cancel-btn')?.addEventListener('click', () => closeConfirmDialog(false));
-      document.getElementById('confirm-dialog-proceed-btn')?.addEventListener('click', () => closeConfirmDialog(true));
-      document.getElementById('modal-confirm-dialog')?.addEventListener('click', (e) => {
-        if (e.target.id === 'modal-confirm-dialog') closeConfirmDialog(false);
-      });
-      document.addEventListener('keydown', (e) => {
-        const modal = document.getElementById('modal-confirm-dialog');
-        if (modal && !modal.classList.contains('hidden')) {
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            closeConfirmDialog(false);
-          } else if (e.key === 'Enter') {
-            e.preventDefault();
-            closeConfirmDialog(true);
-          }
-        }
-      });
-    }
-
-    function showToast(message, type = 'info', duration = 3800) {
-      const container = document.getElementById('toast-container');
-      if (!container) return;
-
-      const toast = document.createElement('div');
-      toast.className = 'pointer-events-auto flex items-center space-x-3 px-4 py-3 rounded-xl border shadow-xl text-xs font-medium transform transition-all duration-300 translate-y-3 opacity-0 backdrop-blur-md';
-
-      let icon = 'fa-circle-info text-cyan-400';
-      if (type === 'success') {
-        toast.className += ' bg-emerald-950/95 border-emerald-500/40 text-emerald-200 shadow-emerald-950/50';
-        icon = 'fa-circle-check text-emerald-400';
-      } else if (type === 'error') {
-        toast.className += ' bg-red-950/95 border-red-500/40 text-red-200 shadow-red-950/50';
-        icon = 'fa-circle-xmark text-red-400';
-      } else if (type === 'warning') {
-        toast.className += ' bg-amber-950/95 border-amber-500/40 text-amber-200 shadow-amber-950/50';
-        icon = 'fa-triangle-exclamation text-amber-400';
-      } else {
-        toast.className += ' bg-slate-900/95 border-slate-700 text-slate-200 shadow-black/80';
-      }
-
-      toast.innerHTML = `
-        <i class="fa-solid ${icon} text-sm flex-shrink-0"></i>
-        <span class="flex-1">${escapeHtml(message)}</span>
-        <button type="button" class="text-slate-400 hover:text-white transition ml-2 focus:outline-none"><i class="fa-solid fa-xmark text-xs"></i></button>
-      `;
-
-      toast.querySelector('button')?.addEventListener('click', () => toast.remove());
-      container.appendChild(toast);
-
-      setTimeout(() => {
-        toast.classList.remove('translate-y-3', 'opacity-0');
-        toast.classList.add('translate-y-0', 'opacity-100');
-      }, 10);
-
-      setTimeout(() => {
-        toast.classList.remove('translate-y-0', 'opacity-100');
-        toast.classList.add('translate-y-2', 'opacity-0');
-        setTimeout(() => toast.remove(), 300);
-      }, duration);
-    }
 
     function updateLiveDateIndicator() {
       const dateEl = document.getElementById('dash-date-indicator');
@@ -2415,7 +2208,7 @@
       if (ports === 'custom') {
         const customVal = (document.getElementById('scan-ports-custom').value || '').trim();
         if (!customVal) {
-          showToast('Please enter a custom port range or list (e.g. 135,139,445,3389).', 'warning');
+          alert('Please enter a custom port range or list (e.g. 135,139,445,3389).');
           return;
         }
         ports = customVal;
@@ -2475,7 +2268,7 @@
 
         const data = await res.json();
         if (!res.ok) {
-          showToast('Failed to start scan: ' + (data.error || 'Unknown error'), 'error');
+          alert('Failed to start scan: ' + (data.error || 'Unknown error'));
           submitBtn.disabled = false;
           submitBtn.innerHTML = `<i class="fa-solid fa-play"></i><span>BEGIN ASSESSMENT</span>`;
           return;
@@ -2488,7 +2281,7 @@
         switchMainView('assessments');
         connectScanWebSocket(data.scan.id);
       } catch (err) {
-        showToast('Error initiating scan: ' + err.message, 'error');
+        alert('Error initiating scan: ' + err.message);
         submitBtn.disabled = false;
         submitBtn.innerHTML = `<i class="fa-solid fa-play"></i><span>BEGIN ASSESSMENT</span>`;
       }
@@ -2501,6 +2294,7 @@
 
       activeScanId = scanId;
       document.getElementById('scan-hud').classList.remove('hidden');
+      document.getElementById('btn-stop-scan').disabled = false;
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws/scans/${scanId}`;
@@ -2576,9 +2370,13 @@
         loadScanHistory();
         loadDashboardStats();
       } else if (ev.type === 'status_change') {
+        if (currentScanData) currentScanData.status = ev.status;
         if (ev.status === 'stopped') {
           document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>STOPPED</span>`;
           document.getElementById('hud-status-badge').className = 'px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-rose-950/80 text-rose-400 border border-rose-500/40 flex items-center space-x-1.5';
+        }
+        if (ev.status === 'completed' || ev.status === 'failed' || ev.status === 'stopped') {
+          document.getElementById('btn-stop-scan').disabled = true;
         }
         loadDashboardStats();
       } else if (ev.type === 'log') {
@@ -2597,11 +2395,13 @@
       document.getElementById('stat-open-ports').innerText = scan.open_ports ? scan.open_ports.length : 0;
 
       if (scan.status === 'completed') {
+        document.getElementById('btn-stop-scan').disabled = true;
         document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>COMPLETED</span>`;
         document.getElementById('hud-status-badge').className = 'px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 flex items-center space-x-1.5';
         document.getElementById('hud-progress-bar').style.width = '100%';
         document.getElementById('hud-percent').innerText = '100.0%';
       } else if (scan.status === 'stopped') {
+        document.getElementById('btn-stop-scan').disabled = true;
         document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>STOPPED</span>`;
         document.getElementById('hud-status-badge').className = 'px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-rose-950/80 text-rose-400 border border-rose-500/40 flex items-center space-x-1.5';
       }
@@ -2628,22 +2428,38 @@
 
     async function stopCurrentScan() {
       if (!activeScanId) return;
-      const confirmed = await showConfirmDialog({
-        title: 'Stop Active Scan',
-        message: 'Are you sure you want to abort the currently executing vulnerability assessment?',
-        itemName: `Scan ID: ${activeScanId}`,
-        warning: 'The engine will immediately terminate socket workers and finalize partial findings.',
-        confirmText: 'Stop Scan',
-        confirmIcon: 'fa-hand',
-        isDanger: true
-      });
-      if (!confirmed) return;
+      if (!confirm('Are you sure you want to stop the active scan?')) return;
+      const stopButton = document.getElementById('btn-stop-scan');
+      stopButton.disabled = true;
+      stopButton.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Stopping...</span>`;
 
+      // Send stop command via WebSocket for immediate in-process delivery
+      if (activeWebSocket && activeWebSocket.readyState === WebSocket.OPEN) {
+        try {
+          activeWebSocket.send(JSON.stringify({ action: 'stop' }));
+        } catch (e) {
+          console.warn('WebSocket stop signal failed:', e);
+        }
+      }
+
+      // Also send via REST API as a reliable fallback
       try {
-        await fetch(`/api/scans/${activeScanId}/stop`, { method: 'POST' });
-        showToast('Scan abort signal dispatched', 'warning');
-      } catch (err) {
-        showToast('Failed to abort scan: ' + err.message, 'error');
+        const response = await fetch(`/api/scans/${activeScanId}/stop`, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'The scan could not be stopped.');
+        }
+        // Update HUD immediately to reflect stopped state
+        document.getElementById('hud-status-badge').innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>STOPPED</span>`;
+        document.getElementById('hud-status-badge').className = 'px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-rose-950/80 text-rose-400 border border-rose-500/40 flex items-center space-x-1.5';
+        if (currentScanData) currentScanData.status = 'stopped';
+        stopButton.innerHTML = `<i class="fa-solid fa-hand"></i><span>Stopped</span>`;
+        loadScanHistory();
+        loadDashboardStats();
+      } catch (error) {
+        stopButton.disabled = false;
+        stopButton.innerHTML = `<i class="fa-solid fa-hand"></i><span>Stop Scan</span>`;
+        alert(`Failed to stop scan: ${error.message}`);
       }
     }
 
@@ -3015,7 +2831,7 @@
         btnText.innerText = 'Copied!';
         setTimeout(() => { btnText.innerText = 'Copy'; }, 2000);
       } catch (err) {
-        showToast('cURL command: ' + curlCmd, 'info');
+        alert('Copied: ' + curlCmd);
       }
     }
 
@@ -3125,10 +2941,9 @@
         document.getElementById('sched-name').value = '';
         document.getElementById('sched-target').value = '';
         document.getElementById('sched-webhook').value = '';
-        showToast('Perimeter monitor created successfully', 'success');
         await loadSchedulesList();
       } catch (err) {
-        showToast('Error creating monitor: ' + err.message, 'error');
+        alert('Error creating monitor: ' + err.message);
       }
     }
 
@@ -3136,37 +2951,21 @@
       try {
         const res = await fetch(`/api/schedules/${id}/trigger`, { method: 'POST' });
         const data = await res.json();
-        showToast(`Perimeter scan triggered! Scan ID: ${data.scan_id}`, 'success');
+        alert(`Perimeter scan triggered! Scan ID: ${data.scan_id}`);
         closeSchedulesModal();
         await loadScanHistory();
       } catch (err) {
-        showToast('Failed to trigger scan: ' + err.message, 'error');
+        alert('Failed to trigger scan: ' + err.message);
       }
     }
 
     async function deleteScheduleItem(id) {
-      const confirmed = await showConfirmDialog({
-        title: 'Delete Perimeter Monitor',
-        message: 'Are you sure you want to remove this scheduled perimeter scan monitor?',
-        itemName: `Schedule #${id}`,
-        warning: 'This recurring automated scan job will be permanently removed from the scheduler.',
-        confirmText: 'Delete Schedule',
-        confirmIcon: 'fa-trash-can',
-        isDanger: true
-      });
-      if (!confirmed) return;
-
+      if (!confirm('Delete this automated perimeter schedule?')) return;
       try {
-        const res = await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          showToast(data.error || 'Failed to delete schedule', 'error');
-          return;
-        }
-        showToast('Perimeter monitor deleted successfully', 'success');
+        await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
         await loadSchedulesList();
       } catch (err) {
-        showToast('Failed to delete schedule: ' + err.message, 'error');
+        alert('Failed to delete schedule: ' + err.message);
       }
     }
 
@@ -3246,7 +3045,7 @@
 
     async function viewScanHistoryItem(scanId) {
       const res = await fetch(`/api/scans/${scanId}`);
-      if (!res.ok) return showToast('Failed to retrieve scan data', 'error');
+      if (!res.ok) return alert('Failed to retrieve scan data');
       const data = await res.json();
       currentScanData = data;
       activeScanId = scanId;
@@ -3263,30 +3062,14 @@
     }
 
     async function deleteScanHistoryItem(scanId) {
-      const confirmed = await showConfirmDialog({
-        title: 'Delete Assessment',
-        message: 'Are you sure you want to permanently delete this assessment record?',
-        itemName: scanId,
-        warning: 'This action is irreversible. All associated vulnerabilities and network telemetry will be purged.',
-        confirmText: 'Delete Assessment',
-        confirmIcon: 'fa-trash-can',
-        isDanger: true
-      });
-      if (!confirmed) return;
-
-      try {
-        const res = await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          showToast(data.error || 'Failed to delete scan: permission denied', 'error');
-          return;
-        }
-        showToast(`Assessment ${scanId} deleted successfully`, 'success');
-        await loadScanHistory(currentHistoryPage);
-        await loadDashboardStats();
-      } catch (err) {
-        showToast('Error deleting assessment: ' + err.message, 'error');
+      if (!confirm(`Permanently delete assessment ${scanId}?`)) return;
+      const res = await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to delete scan: permission denied');
+        return;
       }
+      await loadScanHistory(currentHistoryPage);
     }
 
     function openDiffModal(preselectedId = null) {
@@ -3326,14 +3109,14 @@
     async function computeScanDiff() {
       const scanA = document.getElementById('diff-select-a').value;
       const scanB = document.getElementById('diff-select-b').value;
-      if (!scanA || !scanB) return showToast('Please select two scans to compare.', 'warning');
-      if (scanA === scanB) return showToast('Please select two distinct scans.', 'warning');
+      if (!scanA || !scanB) return alert('Please select two scans to compare.');
+      if (scanA === scanB) return alert('Please select two distinct scans.');
 
       try {
         const res = await fetch(`/api/scans/${scanA}/diff/${scanB}`);
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          return showToast(err.error || 'Failed to compute diff', 'error');
+          return alert(err.error || 'Failed to compute diff');
         }
         const diff = await res.json();
         
@@ -3365,7 +3148,7 @@
         document.getElementById('diff-results-container').classList.remove('hidden');
       } catch (err) {
         console.error('Diff error:', err);
-        showToast('Failed to compute drift: ' + err.message, 'error');
+        alert('Failed to compute drift: ' + err.message);
       }
     }
 
@@ -3373,7 +3156,7 @@
     async function executePassiveRecon() {
       const domainInput = document.getElementById('recon-domain-input');
       const target = domainInput.value.trim();
-      if (!target) return showToast('Please enter a target domain or hostname', 'warning');
+      if (!target) return alert('Please enter a target domain or hostname');
 
       const btn = document.getElementById('btn-recon-run');
       btn.disabled = true;
@@ -3443,7 +3226,7 @@
         document.getElementById('recon-results-card').classList.remove('hidden');
       } catch (err) {
         console.error('Recon error:', err);
-        showToast('OSINT reconnaissance error: ' + err.message, 'error');
+        alert('OSINT reconnaissance error: ' + err.message);
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<i class="fa-solid fa-bolt"></i><span>Scan OSINT</span>`;
@@ -3453,14 +3236,14 @@
     // ─── Export Operations ───
     function exportReport(format) {
       if (!activeScanId) {
-        return showToast('Please select or run an assessment before exporting.', 'warning');
+        return alert('Please select or run an assessment before exporting.');
       }
       window.open(`/api/scans/${activeScanId}/export/${format}`, '_blank');
     }
 
     async function copyMarkdownReport() {
       if (!activeScanId) {
-        return showToast('Please select or run an assessment before copying.', 'warning');
+        return alert('Please select or run an assessment before copying.');
       }
       const copyBtnText = document.getElementById('copy-btn-text');
       try {
@@ -3468,12 +3251,11 @@
         if (!res.ok) throw new Error('Failed to fetch Markdown report');
         const text = await res.text();
         await navigator.clipboard.writeText(text);
-        showToast('Markdown report copied to clipboard!', 'success');
         if (copyBtnText) copyBtnText.textContent = 'Copied!';
         setTimeout(() => { if (copyBtnText) copyBtnText.textContent = 'Copy'; }, 2000);
       } catch (err) {
         console.error('Clipboard copy failed:', err);
-        showToast('Failed to copy to clipboard. Downloading Markdown instead.', 'warning');
+        alert('Failed to copy to clipboard. Downloading Markdown instead.');
         exportReport('md');
       }
     }
