@@ -1,0 +1,18 @@
+id: PENTRAX-HTTP-102
+name: Exposed Database Dump File (.sql)
+severity: HIGH
+category: DAST
+http:
+  method: GET
+  paths:
+    - /backup.sql
+    - /dump.sql
+    - /db.sql
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words: ["CREATE TABLE", "INSERT INTO", "mysqldump"]
+      condition: or
+remediation: Delete database dumps from the web root and rotate any credentials stored in the database.
+sla: 48 Hours
