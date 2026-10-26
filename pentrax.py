@@ -4916,14 +4916,14 @@ def print_banner():
     caps_str = " · ".join(capabilities)
     
     print(f"""
-{C.R}{C.BOLD}  ╔══════════════════════════════════════════════════════════════════════╗
-  ║                                                                      ║
-  ║   ░█▀█░█▀▀░█▄░█░▀█▀░█▀▄░█▀█░█░█  v{VERSION} — Production Grade            ║
-  ║   ░█▀▀░█▀▀░█░▀█░░█░░█▀▄░█▀█░░█░                                      ║
-  ║   ░▀░░░▀▀▀░▀░░▀░░▀░░▀░▀░▀░▀░▀░▀                                      ║
-  ║                                                                      ║
-  ║   SYN/ACK/FIN/XMAS/NULL · CVE+CVSS · CIS · Plugins · Resume · IPv6   ║
-  ╚══════════════════════════════════════════════════════════════════════╝{C.E}
+      {C.R}●{C.E}       {C.R}{C.BOLD}██████╗ ███████╗███╗   ██╗████████╗██████╗  █████╗ ██╗  ██╗{C.E}
+    {C.R}╱   ╲{C.E}     {C.R}{C.BOLD}██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔══██╗██╔══██╗╚██╗██╔╝{C.E}
+  {C.R}●╱  {C.W}▲{C.R}  ╲●{C.E}   {C.R}{C.BOLD}██████╔╝█████╗  ██╔██╗ ██║   ██║   ██████╔╝███████║ ╚███╔╝{C.E} 
+  {C.R}│  {C.W}╱ {C.R}✓{C.W} ╲{C.R}  │{C.E}  {C.R}{C.BOLD}██╔═══╝ ██╔══╝  ██║╚██╗██║   ██║   ██╔══██╗██╔══██║ ██╔██╗{C.E} 
+   {C.R}╲ {C.W}╰─━─╯{C.R} ╱{C.E}   {C.R}{C.BOLD}██║     ███████╗██║ ╚████║   ██║   ██║  ██║██║  ██║██╔╝ ██╗{C.E}
+    {C.R}●─────●{C.E}    {C.R}{C.BOLD}╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝{C.E}
+  {C.CY}v{VERSION}{C.E} — {C.BOLD}Enterprise Attack Surface Management & Red Team Scanner{C.E}
+  {C.D}SYN/ACK/FIN/XMAS · CVE+CVSS · CIS · Web DAST · Crawler · Fuzzer · IPv6{C.E}
   
   {C.BOLD}Privileges:{C.E} {root_status}  {C.BOLD}Capabilities:{C.E} {caps_str}
 """)
@@ -5503,133 +5503,167 @@ async def amain(args, event_callback=None):
 #  SECTION 29: CLI ARGUMENT PARSER
 # ═══════════════════════════════════════════════════════════════════
 
+class RedTeamHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Tactical ANSI-highlighted help formatter for Red Team and penetration testing operators."""
+
+    def __init__(self, prog):
+        import shutil
+        try:
+            width = min(max(shutil.get_terminal_size((100, 24)).columns, 80), 120)
+        except Exception:
+            width = 100
+        super().__init__(prog, indent_increment=2, max_help_position=34, width=width)
+        self.use_color = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+    def start_section(self, heading):
+        if self.use_color and heading:
+            heading = f"\033[1;36m{heading}\033[0m"
+        return super().start_section(heading)
+
+    def _format_action(self, action):
+        help_text = super()._format_action(action)
+        if self.use_color:
+            help_text = re.sub(r'(\s+)(-{1,2}[a-zA-Z0-9_\-]+)', r'\1\033[1;33m\2\033[0m', help_text)
+        return help_text
+
+
+_USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+_CR = C.R if _USE_COLOR else ""
+_CW = C.W if _USE_COLOR else ""
+_CB = C.BOLD if _USE_COLOR else ""
+_CE = C.E if _USE_COLOR else ""
+
+BANNER_CLI = f"""
+      {_CR}●{_CE}       {_CR}{_CB}██████╗ ███████╗███╗   ██╗████████╗██████╗  █████╗ ██╗  ██╗{_CE}
+    {_CR}╱   ╲{_CE}     {_CR}{_CB}██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔══██╗██╔══██╗╚██╗██╔╝{_CE}
+  {_CR}●╱  {_CW}▲{_CR}  ╲●{_CE}   {_CR}{_CB}██████╔╝█████╗  ██╔██╗ ██║   ██║   ██████╔╝███████║ ╚███╔╝{_CE} 
+  {_CR}│  {_CW}╱ {_CR}✓{_CW} ╲{_CR}  │{_CE}  {_CR}{_CB}██╔═══╝ ██╔══╝  ██║╚██╗██║   ██║   ██╔══██╗██╔══██║ ██╔██╗{_CE} 
+   {_CR}╲ {_CW}╰─━─╯{_CR} ╱{_CE}   {_CR}{_CB}██║     ███████╗██║ ╚████║   ██║   ██║  ██║██║  ██║██╔╝ ██╗{_CE}
+    {_CR}●─────●{_CE}    {_CR}{_CB}╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝{_CE}"""
+
+CLI_DESCRIPTION = f"""{BANNER_CLI}
+  PENTRAX v{VERSION} — Enterprise Attack Surface Management & Red Team Scanner
+  Developed at: Information Network Security Administration (INSA) – Cyber Talent Center (CTC)"""
+
+EPILOG_CLI = """
+TACTICAL OPERATIONAL EXAMPLES:
+  1. Full Web Application Assessment (Crawl + Form Extraction + Parameter Fuzzing):
+     python3 pentrax.py http://testphp.vulnweb.com --crawl --fuzz -o web_audit
+
+  2. Stealth Port Reconnaissance & OS Fingerprinting (Raw TCP SYN, Evasive Delays):
+     sudo python3 pentrax.py 192.168.1.50 -s syn --stealth -p 1-1000
+
+  3. Authenticated Web Audit (Session Cookie / Auth Bearer Token Injection):
+     python3 pentrax.py https://app.example.com --crawl --fuzz --cookie "SESSIONID=abc123xyz"
+
+  4. High-Speed Subnet Reconnaissance (Top 100 Common Ports across /24 CIDR):
+     python3 pentrax.py 192.168.1.0/24 --fast -o subnet_recon
+
+  5. Complete Infrastructure Vulnerability Assessment (All 65,535 TCP + UDP + CVE Correlation):
+     python3 pentrax.py 10.0.0.1 --full --vuln -f all -o corp_pentest
+"""
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description=f"PENTRAX v{VERSION} — Enterprise Attack Surface Discovery & Red Team Scanner",
-        formatter_class=argparse.RawTextHelpFormatter,
+        prog="pentrax.py",
+        description=CLI_DESCRIPTION,
+        formatter_class=RedTeamHelpFormatter,
+        epilog=EPILOG_CLI,
+        add_help=False
     )
-    parser.add_argument("target", nargs="?", help="Target: CIDR, IP, or hostname")
-    parser.add_argument("-t", "--target-opt", dest="target_opt", help="Target: CIDR, IP, or hostname (optional flag)")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose audit logging")
-    parser.add_argument("-p", "--ports", default="all",
-                        help="TCP Ports: 'all' (1-65535), '1-1024', '22,80,443'")
-    parser.add_argument("--top", type=int, default=0,
-                        help="Scan only top N common TCP ports")
-    parser.add_argument("--udp", action="store_true",
-                        help="Enable UDP scanning")
-    parser.add_argument("-s", "--scan-type", default="connect",
+
+    # 🎯 TARGET & SCOPE SPECIFICATION
+    g_target = parser.add_argument_group("🎯 TARGET & SCOPE SPECIFICATION")
+    g_target.add_argument("target", nargs="?", help="Target: CIDR (192.168.1.0/24), IP, hostname, or URL")
+    g_target.add_argument("-t", "--target-opt", dest="target_opt", help="Target specification (optional alternative to positional)")
+    g_target.add_argument("--scope", default=None, metavar="FILE", help="Strict engagement allowlist file (aborts scan if target departs scope)")
+    g_target.add_argument("--exclude", default=None, help="Comma-separated IP addresses or CIDR subnets to exclude")
+
+    # ⚡ ATTACK PROFILES & PRESETS
+    g_presets = parser.add_argument_group("⚡ ATTACK PROFILES & PRESETS")
+    g_presets.add_argument("--quick", action="store_true", help="Quick Recon: top 50 common ports (~5 seconds)")
+    g_presets.add_argument("--fast", action="store_true", help="High-Velocity Sweep: top 100 ports, 10,000 concurrency, 0.5s timeout")
+    g_presets.add_argument("--stealth", action="store_true", help="Stealth Mode: SYN scan, evasive timing, port shuffle & decoys (root required)")
+    g_presets.add_argument("--vuln", action="store_true", help="Vulnerability Audit: deep intel probes + automated CVE correlation")
+    g_presets.add_argument("--full", action="store_true", help="Full Audit: all 65,535 TCP + UDP + deep intel + ICMP discovery")
+    g_presets.add_argument("--thorough", action="store_true", help="Thorough: all 65,535 ports + deep intel probes + UDP")
+
+    # 📡 PORTS & PROTOCOLS
+    g_ports = parser.add_argument_group("📡 PORTS & PROTOCOLS")
+    g_ports.add_argument("-p", "--ports", default="all", help="TCP Ports: 'all' (1-65535), '1-1024', or list '22,80,443,8080'")
+    g_ports.add_argument("--top", type=int, default=0, help="Scan only top N most common enterprise TCP ports (e.g. --top 100)")
+    g_ports.add_argument("--udp", action="store_true", help="Enable UDP service scanning (DNS, SNMP, NTP, DHCP)")
+
+    # 🕵️ PROBE TECHNIQUES (RAW SOCKETS)
+    g_tech = parser.add_argument_group("🕵️ PROBE TECHNIQUES (RAW SOCKETS)")
+    g_tech.add_argument("-s", "--scan-type", default="connect",
                         choices=["connect", "syn", "ack", "fin", "xmas", "null", "window"],
-                        help="Scan type (SYN/ACK/FIN/XMAS/NULL/WINDOW require root)")
-    parser.add_argument("-c", "--concurrency", type=int, default=5000,
-                        help="Max concurrent sockets (default: 5000)")
-    parser.add_argument("-T", "--timeout", type=float, default=1.5,
-                        help="Connect timeout in seconds (default: 1.5)")
-    parser.add_argument("--timing", default=None,
-                        choices=["T0","T1","T2","T3","T4","T5"],
-                        help="Timing template (T0=Paranoid to T5=Insane)")
-    parser.add_argument("--icmp", action="store_true",
-                        help="Use ICMP ping for host discovery")
-    parser.add_argument("--no-banner", action="store_true",
-                        help="Skip version detection")
-    parser.add_argument("--no-mac", action="store_true",
-                        help="Skip MAC address resolution")
-    parser.add_argument("--deep", action="store_true",
-                        help="Enable deep intel (15+ service probes)")
-    parser.add_argument("--dast", action="store_true", default=True,
-                        help="Enable Web DAST audit (CORS, headers, sensitive paths)")
-    parser.add_argument("--no-dast", action="store_false", dest="dast",
-                        help="Disable Web DAST audit")
-    parser.add_argument("--ssl-audit", action="store_true", default=True,
-                        help="Enable SSL/TLS cryptographic audit")
-    parser.add_argument("--no-ssl-audit", action="store_false", dest="ssl_audit",
-                        help="Disable SSL/TLS cryptographic audit")
-    parser.add_argument("--crawl", action="store_true", default=True,
-                        help="Enable Web spider/crawler for link and form discovery")
-    parser.add_argument("--no-crawl", action="store_false", dest="crawl",
-                        help="Disable Web spider/crawler")
-    parser.add_argument("--fuzz", action="store_true", default=True,
-                        help="Enable active parameter fuzzing (safe XSS & SQLi checks)")
-    parser.add_argument("--no-fuzz", action="store_false", dest="fuzz",
-                        help="Disable active parameter fuzzing")
-    parser.add_argument("--cookie", default=None,
-                        help="Session cookie for authenticated web assessment (e.g. 'session=xyz')")
-    parser.add_argument("--header", default=None,
-                        help="Custom HTTP authorization/audit header (e.g. 'Authorization: Bearer xyz')")
-    parser.add_argument("--shuffle", action="store_true",
-                        help="Randomize port order")
-    parser.add_argument("--evasive", action="store_true",
-                        help="Enable evasion (random delays)")
-    parser.add_argument("--max-delay", type=float, default=2.0,
-                        help="Max random delay for evasion (default: 2.0)")
-    
-    # Decoy scanning
-    parser.add_argument("--decoy", default=None,
-                        help="Decoy IPs (comma-separated, or 'RND' for random)")
-    
-    # Packet fragmentation
-    parser.add_argument("--mtu", type=int, default=0,
-                        help="Fragment packets with specified MTU (e.g., 24, 48)")
-    
-    # Scripting/plugin support
-    parser.add_argument("--script", default=None,
-                        help="Load plugin scripts (comma-separated paths)")
-    
-    # Resume/checkpoint
-    parser.add_argument("--resume", default=None,
-                        help="Resume scan from checkpoint file")
-    parser.add_argument("--checkpoint", default=None,
-                        help="Save checkpoint to this file during scan")
-    
-    # Config/profile
-    parser.add_argument("--config", default=None,
-                        help="Load scan config from JSON file")
-    parser.add_argument("--save-profile", default=None,
-                        help="Save current settings as a profile")
-    
-    # Logging
-    parser.add_argument("--log", default=None,
-                        help="Write audit log to file")
-    
-    # Scope/authorization
-    parser.add_argument("--authorize", action="store_true",
-                        help="Confirm authorization to scan target")
-    parser.add_argument("--scope", default=None, metavar="FILE",
-                        help="Allowlist file (one CIDR/IP per line). Any target outside it aborts the scan")
-    
-    # Output
-    parser.add_argument("--exclude", default=None,
-                        help="Comma-separated IPs/CIDRs to exclude")
-    parser.add_argument("-o", "--output", default=None,
-                        help="Output filename base")
-    parser.add_argument("-f", "--format", default="all",
-                        choices=["json","csv","html","all"],
-                        help="Output format (default: all)")
-    parser.add_argument("-y", "--yes", action="store_true",
-                        help="Auto-confirm warnings")
-    
-    # Self-test
-    parser.add_argument("--self-test", action="store_true",
-                        help="Run automated self-tests and exit")
-    
-    # Presets
-    parser.add_argument("--fast", action="store_true",
-                        help="Fast: top 100 ports, 10000 sockets, 0.5s timeout")
-    parser.add_argument("--quick", action="store_true",
-                        help="Quick: top 50 ports")
-    parser.add_argument("--stealth", action="store_true",
-                        help="Stealth: SYN scan, evasive, shuffle, T2 timing, decoys")
-    parser.add_argument("--thorough", action="store_true",
-                        help="Thorough: all ports, deep intel, UDP")
-    parser.add_argument("--full", action="store_true",
-                        help="Full: all ports + UDP + deep intel + ICMP")
-    parser.add_argument("--vuln", action="store_true",
-                        help="Vuln scan: deep intel + CVE matching")
-    parser.add_argument("--verify", action="store_true",
-                        help="Verify vulnerabilities with safe PoC checks (non-destructive)")
+                        help="Transport scan type (SYN/ACK/FIN/XMAS/NULL/WINDOW require root/CAP_NET_RAW)")
+    g_tech.add_argument("--icmp", action="store_true", help="Use ICMP Echo Ping for host discovery")
+    g_tech.add_argument("--no-banner", action="store_true", help="Skip service banner and version detection")
+    g_tech.add_argument("--no-mac", action="store_true", help="Skip local ARP/MAC address resolution")
+    g_tech.add_argument("--deep", action="store_true", help="Enable deep protocol interrogation (15+ service probes)")
+    g_tech.add_argument("--verify", action="store_true", help="Verify discovered vulnerabilities with safe, non-destructive PoC oracles")
+
+    # 🌐 WEB DAST, CRAWLER & ACTIVE FUZZING
+    g_web = parser.add_argument_group("🌐 WEB DAST, CRAWLER & ACTIVE FUZZING")
+    g_web.add_argument("--crawl", action="store_true", default=True, help="Enable autonomous web spider/crawler for DOM link and form harvesting")
+    g_web.add_argument("--no-crawl", action="store_false", dest="crawl", help="Disable autonomous web spider/crawler")
+    g_web.add_argument("--fuzz", action="store_true", default=True, help="Enable active parameter fuzzing (canary Reflected XSS & SQLi syntax oracles)")
+    g_web.add_argument("--no-fuzz", action="store_false", dest="fuzz", help="Disable active parameter fuzzing")
+    g_web.add_argument("--dast", action="store_true", default=True, help="Enable Web DAST audit (security headers, CORS, clickjacking, exposed secrets)")
+    g_web.add_argument("--no-dast", action="store_false", dest="dast", help="Disable Web DAST audit")
+    g_web.add_argument("--ssl-audit", action="store_true", default=True, help="Enable SSL/TLS cipher audit and certificate chain inspection")
+    g_web.add_argument("--no-ssl-audit", action="store_false", dest="ssl_audit", help="Disable SSL/TLS cryptographic audit")
+    g_web.add_argument("--cookie", default=None, help="Session cookie for authenticated web assessment (e.g. 'session=xyz')")
+    g_web.add_argument("--header", default=None, help="Custom HTTP header for API token auditing (e.g. 'Authorization: Bearer <jwt>')")
+
+    # 🛡️ EVASION & IDS/FIREWALL BYPASS
+    g_evasion = parser.add_argument_group("🛡️ EVASION & IDS/FIREWALL BYPASS")
+    g_evasion.add_argument("--evasive", action="store_true", help="Enable evasion engine (random packet inter-delay jitter)")
+    g_evasion.add_argument("--shuffle", action="store_true", help="Randomize target port order to evade threshold alerts")
+    g_evasion.add_argument("--max-delay", type=float, default=2.0, help="Maximum random delay between probes in seconds (default: 2.0)")
+    g_evasion.add_argument("--decoy", default=None, help="Spoof scan with decoy IP addresses (comma-separated or 'RND' for random)")
+    g_evasion.add_argument("--mtu", type=int, default=0, help="Fragment raw IP packets with specified MTU (e.g. 24, 48)")
+
+    # ⏱️ TIMING & PERFORMANCE
+    g_timing = parser.add_argument_group("⏱️ TIMING & PERFORMANCE")
+    g_timing.add_argument("-c", "--concurrency", type=int, default=5000, help="Maximum concurrent asynchronous sockets (default: 5000)")
+    g_timing.add_argument("-T", "--timeout", type=float, default=1.5, help="Socket connect/read timeout in seconds (default: 1.5)")
+    g_timing.add_argument("--timing", default=None, choices=["T0", "T1", "T2", "T3", "T4", "T5"],
+                          help="Timing velocity template: T0 (Paranoid) to T5 (Insane)")
+
+    # 📊 EVIDENCE, REPORTING & NOTIFICATIONS
+    g_report = parser.add_argument_group("📊 EVIDENCE, REPORTING & NOTIFICATIONS")
+    g_report.add_argument("-o", "--output", default=None, help="Output base filename for exported audit reports")
+    g_report.add_argument("-f", "--format", default="all", choices=["json", "csv", "html", "all"],
+                          help="Report export format: json, csv, html, or all (default: all)")
+    g_report.add_argument("-v", "--verbose", action="store_true", help="Enable verbose audit logging in terminal output")
+    g_report.add_argument("--log", default=None, help="Write structured audit log to specified file path")
+    g_report.add_argument("--webhook", default=None, help="Discord or Slack incoming webhook URL for real-time critical alerts")
+
+    # ⚙️ WORKFLOWS & EXTENSIONS
+    g_workflow = parser.add_argument_group("⚙️ WORKFLOWS & EXTENSIONS")
+    g_workflow.add_argument("--config", default=None, help="Load assessment configuration from JSON profile")
+    g_workflow.add_argument("--save-profile", default=None, help="Save current CLI options as a reusable JSON profile")
+    g_workflow.add_argument("--script", default=None, help="Load custom YAML vulnerability template files or directories")
+    g_workflow.add_argument("--resume", default=None, help="Resume an interrupted scan from checkpoint file")
+    g_workflow.add_argument("--checkpoint", default=None, help="Save periodic state checkpoints to file during execution")
+
+    # ⚖️ COMPLIANCE & GOVERNANCE
+    g_gov = parser.add_argument_group("⚖️ COMPLIANCE & GOVERNANCE")
+    g_gov.add_argument("--authorize", action="store_true", help="Affirm legal authorization to conduct offensive security assessment")
+    g_gov.add_argument("-y", "--yes", action="store_true", help="Auto-confirm all interactive scope warnings")
+    g_gov.add_argument("--self-test", action="store_true", help="Execute engine self-diagnostics suite and exit")
+    g_gov.add_argument("-h", "--help", action="help", help="Show this tactical help menu and exit")
 
     args = parser.parse_args()
     if not args.target and getattr(args, "target_opt", None):
         args.target = args.target_opt
+
+    if getattr(args, "webhook", None):
+        os.environ["PENTRAX_WEBHOOK_URL"] = args.webhook
 
     # Self-test mode
     if args.self_test:
