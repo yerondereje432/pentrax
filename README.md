@@ -1,6 +1,17 @@
 # ⬡ PENTRAX v10.0
 ### **ENTERPRISE WEB VULNERABILITY ASSESSMENT & OFFENSIVE AUDIT PLATFORM**
 
+```text
+      ▄█▄          ██████╗ ███████╗███╗   ██╗████████╗██████╗  █████╗ ██╗  ██╗
+    ▄██ ██▄        ██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔══██╗██╔══██╗╚██╗██╔╝
+  ▄██▀ ▄ ▀██▄      ██████╔╝█████╗  ██╔██╗ ██║   ██║   ██████╔╝███████║ ╚███╔╝ 
+  ███ ▄█▀  ███     ██╔═══╝ ██╔══╝  ██║╚██╗██║   ██║   ██╔══██╗██╔══██║ ██╔██╗ 
+  ▀██▄ ▀  ▄██▀     ██║     ███████╗██║ ╚████║   ██║   ██║  ██║██║  ██║██╔╝ ██╗
+   ▀███████▀       ╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
+  v10.0 — Enterprise Attack Surface Management & Red Team Scanner
+  Developed at: Information Network Security Administration (INSA) – Cyber Talent Center (CTC)
+```
+
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Framework](https://img.shields.io/badge/engine-AsyncIO%20%7C%20Starlette-crimson.svg)]()
@@ -264,39 +275,147 @@ PENTRAX automatically adapts its operational behavior depending on your operatin
 
 ## 📖 CLI Command Reference & Presets
 
-### Scanning Presets
-- `--quick`: Scans the top 50 ports with high concurrency (fast recon).
-- `--fast`: Scans the top 100 ports with a 0.5s connection timeout.
-- `--stealth`: Activates SYN scan, packet shuffling, evasive delays, and T2 timing.
-- `--thorough`: Scans all 65,535 TCP ports, UDP services, and runs deep intel probes.
-- `--full`: Complete assessment including all ports, UDP, deep intel, and ICMP discovery sweeps.
+PENTRAX features an extensive, production-grade CLI engineered with **10 tactical categories** and **45+ operational flags** designed for offensive operators, red team engagements, and compliance audits.
 
-### Timing Templates
-- `-T0 (Paranoid)`: Serial, extreme delay (evades strict IDS/IPS).
-- `-T1 (Sneaky)`: Slow random delay (evades heuristic detection).
-- `-T2 (Polite)`: Rate-limited scanning (reduces target load).
-- `-T3 (Normal)`: Default adaptive timing.
-- `-T4 (Aggressive)`: Fast parallel scanning suited for test environments.
-- `-T5 (Insane)`: Maximum socket throughput (high-bandwidth lab networks).
+### 1. 🎯 Target & Scope Specification
+| Command / Flag | Type | Default | Description |
+| :--- | :--- | :---: | :--- |
+| `target` | Positional | *Required* | Target specification: CIDR (e.g. `192.168.1.0/24`), IP (`10.0.0.1`), Hostname (`testphp.vulnweb.com`), or URL. |
+| `-t, --target-opt` | String | `None` | Target specification (optional alternative to positional). |
+| `--scope FILE` | File Path | `None` | Strict engagement allowlist file containing CIDRs/IPs. Aborts scan if target departs scope. |
+| `--exclude EXCLUDE` | String | `None` | Comma-separated list of IP addresses or CIDR subnets to exclude from assessment. |
 
-### Common Command Examples
+---
+
+### 2. ⚡ Attack Profiles & Presets
+| Preset | Target Scope | Engine Parameters | Intended Use Case |
+| :--- | :--- | :--- | :--- |
+| `--quick` | Top 50 TCP Ports | `concurrency=8000`, `timeout=1.0s` | Rapid perimeter reconnaissance (~5 seconds). |
+| `--fast` | Top 100 TCP Ports | `concurrency=10000`, `timeout=0.5s` | High-velocity sweep across dense networks. |
+| `--stealth` | Top 100 TCP Ports | SYN scan, `T2` timing, randomized delays, port shuffle, decoys, MTU=24 | IDS/IPS evasion and silent perimeter mapping (Root required). |
+| `--vuln` | Configured Ports | `deep=True`, `concurrency=3000`, `timeout=2.0s` | Vulnerability assessment with deep service probes & CVE correlation. |
+| `--full` | All 65,535 TCP + UDP | `deep=True`, `udp=True`, `icmp=True`, `concurrency=5000` | Full-spectrum infrastructure audit with ICMP host discovery. |
+| `--thorough` | All 65,535 TCP + UDP | `deep=True`, `udp=True`, `concurrency=3000`, `timeout=2.0s` | Deep protocol interrogation on all possible ports. |
+
+---
+
+### 3. 📡 Ports & Protocols
+| Command / Flag | Argument | Default | Description |
+| :--- | :--- | :---: | :--- |
+| `-p, --ports` | String | `1-1024` | TCP Port specification: `'all'` (1-65535), ranges (`'1-1024'`), or list (`'22,80,443,8080'`). |
+| `--top` | Integer | `0` | Scan only the top N most common enterprise TCP ports (e.g. `--top 100`). |
+| `--udp` | Flag | `False` | Enable UDP service scanning across critical ports (DNS, SNMP, NTP, DHCP). |
+
+---
+
+### 4. 🕵️ Probe Techniques (Raw Sockets)
+| Command / Flag | Allowed Values | Default | Description |
+| :--- | :--- | :---: | :--- |
+| `-s, --scan-type` | `connect`, `syn`, `ack`, `fin`, `xmas`, `null`, `window` | `connect` | Transport scan technique. Raw socket types require root/`CAP_NET_RAW`. |
+| `--icmp` | Flag | `False` | Use ICMP Echo Ping sweeps for initial host discovery. |
+| `--no-banner` | Flag | `False` | Skip service banner and version detection. |
+| `--no-mac` | Flag | `False` | Skip local ARP/MAC address resolution. |
+| `--deep` | Flag | `False` | Enable deep protocol interrogation (15+ application-layer service probes). |
+| `--verify` | Flag | `False` | Verify discovered vulnerabilities using safe, non-destructive PoC oracles. |
+
+---
+
+### 5. 🌐 Web DAST, Crawler & Active Fuzzing
+| Command / Flag | Type | Default | Description |
+| :--- | :--- | :---: | :--- |
+| `--crawl` / `--no-crawl` | Boolean | `True` | Enable/disable autonomous web spider/crawler for DOM links and form harvesting. |
+| `--fuzz` / `--no-fuzz` | Boolean | `True` | Enable/disable active parameter fuzzing (canary Reflected XSS & SQLi syntax oracles). |
+| `--dast` / `--no-dast` | Boolean | `True` | Enable/disable Web DAST audit (security headers, CORS, clickjacking, exposed secrets). |
+| `--ssl-audit` / `--no-ssl-audit` | Boolean | `True` | Enable/disable SSL/TLS cipher audit and certificate chain inspection. |
+| `--cookie` | String | `None` | Session cookie for authenticated web assessment (e.g. `'session=abc123xyz'`). |
+| `--header` | String | `None` | Custom HTTP header for API token auditing (e.g. `'Authorization: Bearer <jwt>'`). |
+
+---
+
+### 6. 🛡️ Evasion & IDS/Firewall Bypass
+| Command / Flag | Type | Default | Description |
+| :--- | :--- | :---: | :--- |
+| `--evasive` | Flag | `False` | Enable evasion engine (random packet inter-delay jitter). |
+| `--shuffle` | Flag | `False` | Randomize target port scan order to evade threshold alerts. |
+| `--max-delay` | Float | `2.0` | Maximum random delay between probes in seconds. |
+| `--decoy` | String | `None` | Spoof scan with decoy IP addresses (comma-separated or `'RND'` for random). |
+| `--mtu` | Integer | `0` | Fragment raw IP packets with specified MTU size (e.g. `24`, `48`). |
+
+---
+
+### 7. ⏱️ Timing & Performance Templates
+| Flag | Name | Timeout | Concurrency | Delay | Recommended Usage |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| `--timing T0` | **Paranoid** | 5.0s | 100 | 5.0s | Evading strict, stateful IDS/IPS appliances. |
+| `--timing T1` | **Sneaky** | 4.0s | 300 | 3.0s | Evading heuristic threshold monitoring. |
+| `--timing T2` | **Polite** | 3.0s | 500 | 2.0s | Reducing load on fragile, production servers. |
+| `--timing T3` | **Normal** | 1.5s | 5,000 | 0.0s | Default balanced velocity for standard audits. |
+| `--timing T4` | **Aggressive** | 1.0s | 10,000 | 0.0s | Fast parallel assessment on reliable corporate networks. |
+| `--timing T5` | **Insane** | 0.5s | 15,000 | 0.0s | Maximum speed across high-bandwidth lab subnets. |
+
+*You can also manually override individual timing metrics using `-c, --concurrency` (default: `5000`) and `-T, --timeout` (default: `1.5s`).*
+
+---
+
+### 8. 📊 Evidence, Reporting & Notifications
+| Command / Flag | Values | Default | Description |
+| :--- | :--- | :---: | :--- |
+| `-o, --output` | File path | `pentrax_<target>_<timestamp>` | Base filename for exported audit reports. |
+| `-f, --format` | `json`, `csv`, `html`, `all` | `all` | Report export format selection. |
+| `-v, --verbose` | Flag | `False` | Enable verbose audit logging in terminal output. |
+| `--log` | File path | `None` | Write structured audit log to specified file path. |
+| `--webhook` | URL | `None` | Discord or Slack incoming webhook URL for real-time critical finding alerts. |
+
+---
+
+### 9. ⚙️ Workflows & Extensions
+| Command / Flag | Argument | Description |
+| :--- | :--- | :--- |
+| `--config` | File path | Load assessment configuration from a pre-defined JSON profile. |
+| `--save-profile` | File path | Save current CLI options as a reusable JSON profile and exit. |
+| `--script` | Path / Dir | Load custom YAML vulnerability template files or directories. |
+| `--resume` | File path | Resume an interrupted assessment from a checkpoint state file. |
+| `--checkpoint` | File path | Save periodic state checkpoints to file during scan execution. |
+
+---
+
+### 10. ⚖️ Compliance & Governance
+| Command / Flag | Description |
+| :--- | :--- |
+| `--authorize` | Affirm legal authorization to conduct offensive security assessment (bypasses non-RFC1918 scope warnings). |
+| `-y, --yes` | Auto-confirm all interactive scope warnings (e.g. large subnet confirmation for >10,000 hosts). |
+| `--self-test` | Execute the internal engine diagnostics suite and exit cleanly. |
+| `-h, --help` | Display the tactical, color-categorized help menu and exit. |
+
+---
+
+### ⚔️ Red Team Tactical Operational Examples
 
 ```bash
-# Scan a CIDR block with HTML report export
-python3 pentrax.py 192.168.1.0/24 -p top50 -f html -o lab_report
+# 1. Full Web Application Assessment (Crawl + Form Extraction + Parameter Fuzzing)
+python3 pentrax.py http://testphp.vulnweb.com --crawl --fuzz -o web_audit
 
-# Stealth scan with randomized decoys
-sudo python3 pentrax.py 10.0.0.5 -s syn --decoy RND,RND --evasive
+# 2. Stealth Port Reconnaissance & OS Fingerprinting (Raw TCP SYN, Evasive Delays & Decoys)
+sudo python3 pentrax.py 192.168.1.50 -s syn --stealth -p 1-1000
 
-# Specific service scan excluding an administrative IP
-python3 pentrax.py 10.0.0.0/24 -p 22,80,443,3306 --exclude 10.0.0.1
+# 3. Authenticated Web Audit (Session Cookie / Auth Bearer Token Injection)
+python3 pentrax.py https://app.example.com --crawl --fuzz --cookie "SESSIONID=abc123xyz"
+
+# 4. High-Speed Subnet Reconnaissance (Top 100 Common Ports across /24 CIDR)
+python3 pentrax.py 192.168.1.0/24 --fast -o subnet_recon
+
+# 5. Complete Infrastructure Vulnerability Assessment (All 65,535 TCP + UDP + CVE Correlation)
+python3 pentrax.py 10.0.0.1 --full --vuln -f all -o corp_pentest
+
+# 6. Scope-Restricted Audit with Real-Time Slack Alerting
+python3 pentrax.py 10.0.0.0/24 --scope allowlist.txt --webhook https://hooks.slack.com/services/...
 ```
 
 ---
 
 ## 🧪 Verification & Test Suite
 
-PENTRAX includes a comprehensive unit and integration test suite with **87 automated tests** covering core network engines, packet reassembly, DAST fuzzing, SSL handshake parsing, and SSRF defenses:
+PENTRAX includes a comprehensive unit and integration test suite with **111 automated tests** covering core network engines, packet reassembly, DAST fuzzing, SSL handshake parsing, SSRF defenses, CLI formatting, and reporting pipelines:
 
 ```bash
 # Install runtime dependencies plus httpx2 (test-only HTTP client required by the web API tests)
@@ -314,9 +433,10 @@ test_backport_detection_and_sla (test_pentrax.TestCVEMatching) ... ok
 test_vulnerability_sla_auto_assignment (test_web_api.TestWebAPI) ... ok
 test_export_scan_formats (test_web_api.TestWebAPI) ... ok
 test_websocket_sync (test_web_api.TestWebAPI) ... ok
+test_cli_help_formatter_sections (test_pentrax.TestCLI) ... ok
 ...
 ----------------------------------------------------------------------
-Ran 87 tests in 12.9s
+Ran 111 tests in 5.3s
 
 OK (skipped=4)
 ```
