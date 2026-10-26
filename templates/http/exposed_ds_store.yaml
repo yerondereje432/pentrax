@@ -1,0 +1,16 @@
+id: PENTRAX-HTTP-101
+name: Exposed macOS Directory Metadata File (.DS_Store)
+severity: MEDIUM
+category: DAST
+http:
+  method: GET
+  paths:
+    - /.DS_Store
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words: ["Bud1"]
+      condition: or
+remediation: Remove .DS_Store files from the web root and block dotfiles in Nginx/Apache.
+sla: 7 Days
