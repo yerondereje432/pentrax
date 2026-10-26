@@ -415,7 +415,7 @@ python3 pentrax.py 10.0.0.0/24 --scope allowlist.txt --webhook https://hooks.sla
 
 ## 🧪 Verification & Test Suite
 
-PENTRAX includes a comprehensive unit and integration test suite with **111 automated tests** covering core network engines, packet reassembly, DAST fuzzing, SSL handshake parsing, SSRF defenses, CLI formatting, and reporting pipelines:
+PENTRAX includes a comprehensive unit and integration test suite with **116 automated tests** covering core network engines, packet reassembly, DAST fuzzing, baseline differential profiling, blind SQLi oracles, SSL handshake parsing, SSRF defenses, CLI formatting, and reporting pipelines:
 
 ```bash
 # Install runtime dependencies plus httpx2 (test-only HTTP client required by the web API tests)
@@ -434,9 +434,12 @@ test_vulnerability_sla_auto_assignment (test_web_api.TestWebAPI) ... ok
 test_export_scan_formats (test_web_api.TestWebAPI) ... ok
 test_websocket_sync (test_web_api.TestWebAPI) ... ok
 test_cli_help_formatter_sections (test_pentrax.TestCLI) ... ok
+test_baseline_differential_suppresses_static_sql_error (test_accuracy.TestAccuracyImprovements) ... ok
+test_boolean_blind_sqli_detection (test_accuracy.TestAccuracyImprovements) ... ok
+test_time_blind_sqli_detection (test_accuracy.TestAccuracyImprovements) ... ok
 ...
 ----------------------------------------------------------------------
-Ran 111 tests in 5.3s
+Ran 116 tests in 7.9s
 
 OK (skipped=4)
 ```
