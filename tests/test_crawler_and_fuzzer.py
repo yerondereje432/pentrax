@@ -1,9 +1,10 @@
 """Unit tests for PENTRAX Web Spider / Crawler and Active Parameter Fuzzer."""
 
 import unittest
+import urllib.parse
 from unittest.mock import AsyncMock, patch
 from scanner.crawler import AsyncWebCrawler, _HTMLRouteExtractor
-from scanner.fuzzer import ParameterFuzzer, XSS_CANARY_TAG
+from scanner.fuzzer import ParameterFuzzer
 from scanner.plugin_loader import YAMLTemplateEngine
 
 
@@ -62,12 +63,27 @@ class TestWebCrawler(unittest.TestCase):
 
 
 class TestParameterFuzzer(unittest.IsolatedAsyncioTestCase):
-    """Test suite for safe parameter fuzzing (XSS & SQLi)."""
+    """Test suite for safe parameter fuzzing (XSS & SQLi).
+
+    The HTTP mocks below behave like a real application: the clean
+    baseline request returns a normal page, and only the probe request
+    reflects input / triggers an error. Returning the same "vulnerable"
+    body for *every* request (including the baseline) is unrealistic —
+    baseline-differential detection must, correctly, suppress findings
+    whose signature was already present before any payload was sent.
+    """
 
     async def test_reflected_xss_detection(self):
         fuzzer = ParameterFuzzer()
-        # Mock HTTP GET returning the reflected canary
-        fuzzer._http_get = AsyncMock(return_value=f"<html><body>Hello {XSS_CANARY_TAG}</body></html>")
+
+        async def fake_get(url, headers):
+            # Reflect the submitted "name" value the way a vulnerable app would.
+            parsed = urllib.parse.urlparse(url)
+            qs = urllib.parse.parse_qs(parsed.query)
+            name = qs.get("name", [""])[0]
+            return f"<html><body>Hello {name}</body></html>"
+
+        fuzzer._http_get = AsyncMock(side_effect=fake_get)
 
         endpoints = [{
             "url": "http://target.local/profile?name=john",
@@ -84,8 +100,16 @@ class TestParameterFuzzer(unittest.IsolatedAsyncioTestCase):
 
     async def test_error_sqli_detection(self):
         fuzzer = ParameterFuzzer()
-        # Mock HTTP GET returning a MySQL syntax error
-        fuzzer._http_get = AsyncMock(return_value="Fatal Error: You have an error in your SQL syntax near '1''")
+
+        async def fake_get(url, headers):
+            # Only the quote-bearing probe triggers a database error;
+            # the clean baseline returns a normal product page.
+            decoded = urllib.parse.unquote(url)
+            if "'" in decoded.split("?", 1)[-1]:
+                return "Fatal Error: You have an error in your SQL syntax near '10'''"
+            return "<html><body>Clean Product Page: Item 10</body></html>"
+
+        fuzzer._http_get = AsyncMock(side_effect=fake_get)
 
         endpoints = [{
             "url": "http://target.local/item?id=10",
@@ -118,4 +142,3 @@ class TestYAMLTemplatesExpanded(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
