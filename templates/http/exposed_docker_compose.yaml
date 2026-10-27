@@ -1,0 +1,17 @@
+id: PENTRAX-HTTP-109
+name: Exposed Docker Compose Configuration
+severity: MEDIUM
+category: DAST
+http:
+  method: GET
+  paths:
+    - /docker-compose.yml
+    - /docker-compose.yaml
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words: ["services:", "image:"]
+      condition: and
+remediation: Keep deployment files outside the web root and block access to them. Rotate any passwords or API keys defined in environment variables.
+sla: 7 Days
