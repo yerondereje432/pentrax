@@ -1,0 +1,19 @@
+id: PENTRAX-HTTP-104
+name: Exposed WordPress Configuration Backup
+severity: CRITICAL
+category: DAST
+http:
+  method: GET
+  paths:
+    - /wp-config.php.bak
+    - /wp-config.php~
+    - /wp-config.old
+    - /wp-config.txt
+  matchers:
+    - type: status
+      values: [200]
+    - type: word
+      words: ["DB_PASSWORD", "DB_NAME", "AUTH_KEY"]
+      condition: or
+remediation: Delete backup copies of wp-config.php from the web root, then rotate the database password and all WordPress salts and keys.
+sla: 48 Hours
