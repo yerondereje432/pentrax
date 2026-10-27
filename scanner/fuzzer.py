@@ -195,9 +195,8 @@ class ParameterFuzzer:
 
         if has_dynamic_reflection or has_legacy_reflection:
             reflected_tag = tag if has_dynamic_reflection else XSS_CANARY_TAG
-            is_mock = hasattr(self._http_get, "assert_called")
-            # Baseline differential check: ensure the canary was not already present in the baseline (in real scans)
-            if base_body and not is_mock and reflected_tag in base_body:
+            # Baseline differential check: ensure the canary was not already present in the baseline
+            if base_body and reflected_tag in base_body:
                 logger.debug(f"Suppressing XSS false positive: canary '{reflected_tag}' was already in baseline.")
                 return None
 
@@ -223,7 +222,6 @@ class ParameterFuzzer:
         base_body: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Tests whether single/double quotes elicit explicit database syntax errors not present in baseline."""
-        is_mock = hasattr(self._http_get, "assert_called")
 
         for quote in ("'", "\""):
             fuzzed_qs = {k: list(v) for k, v in base_qs.items()}
@@ -244,7 +242,7 @@ class ParameterFuzzer:
                     # BASELINE DIFFERENTIAL CHECK (Eliminates FPs):
                     # If the exact error string was already present in the clean baseline body,
                     # this is an informational / static text match and NOT a true SQL injection.
-                    if base_body and not is_mock and pattern.search(base_body):
+                    if base_body and pattern.search(base_body):
                         logger.debug(f"Suppressing SQLi false positive: pattern '{error_snippet}' was already present in baseline.")
                         continue
 
