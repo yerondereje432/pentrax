@@ -202,7 +202,7 @@ Security practitioners and red-team operators utilize PENTRAX across every stage
 
 ```bash
 # Clone the repository
-git clone https://github.com/yerondereje432/yerscan.git
+git clone https://github.com/yerondereje432/pentrax.git
 cd yerscan
 
 # Make launcher executable
