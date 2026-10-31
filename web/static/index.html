@@ -933,13 +933,45 @@
             <h2 class="text-xl font-black text-white">Interactive MITRE ATT&amp;CK Topology &amp; Attack Paths</h2>
             <p class="text-xs text-slate-400 mt-0.5">Target Host &rarr; Open Service &rarr; Vulnerability &rarr; MITRE Technique. Click diamond nodes to probe safe reproduction requests.</p>
           </div>
-          <button onclick="renderAttackGraph()" class="px-3 py-1.5 bg-[#0a0e17] hover:bg-slate-800 border border-slate-800 rounded-xl text-xs text-slate-200 transition">
-            <i class="fa-solid fa-arrows-rotate mr-1.5"></i> Refresh Layout
-          </button>
+          <div class="flex items-center space-x-2">
+            <button onclick="renderAttackGraph()" class="px-3 py-1.5 bg-[#0a0e17] hover:bg-slate-800 border border-slate-800 rounded-xl text-xs text-slate-200 transition flex items-center space-x-1.5">
+              <i class="fa-solid fa-arrows-rotate"></i>
+              <span>Refresh Layout</span>
+            </button>
+          </div>
         </div>
 
-        <div class="bg-[#0a0e17] border border-slate-800 rounded-2xl p-5 space-y-3">
-          <div id="attack-graph-canvas" class="w-full min-h-[550px] bg-[#07090e] border border-slate-800/80 rounded-xl relative overflow-hidden">
+        <div id="attack-graph-card" class="bg-[#0a0e17] border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3 transition-all duration-300">
+          <!-- Interactive Toolbar Header -->
+          <div class="flex items-center justify-between flex-wrap gap-2 text-xs border-b border-slate-800/80 pb-3">
+            <div class="flex items-center space-x-1.5 sm:space-x-2">
+              <span class="text-slate-500 font-mono text-[11px] uppercase tracking-wider font-bold mr-1">Layout:</span>
+              <button id="btn-graph-layout-hierarchical" onclick="setGraphLayout('hierarchical')" class="px-2.5 py-1.5 bg-cyan-950/80 text-cyan-300 border border-cyan-500/50 rounded-lg text-xs font-mono font-bold flex items-center space-x-1.5 shadow-sm transition">
+                <i class="fa-solid fa-sitemap"></i><span>Attack Tree (LR)</span>
+              </button>
+              <button id="btn-graph-layout-organic" onclick="setGraphLayout('organic')" class="px-2.5 py-1.5 bg-[#121620] text-slate-400 border border-slate-700/80 hover:text-white rounded-lg text-xs font-mono flex items-center space-x-1.5 transition">
+                <i class="fa-solid fa-circle-nodes"></i><span>Organic Force</span>
+              </button>
+            </div>
+            
+            <div class="flex items-center space-x-1.5">
+              <button onclick="zoomAttackGraph(1.2)" class="w-8 h-8 rounded-lg bg-[#121620] hover:bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center justify-center transition" title="Zoom In (+)">
+                <i class="fa-solid fa-plus text-xs"></i>
+              </button>
+              <button onclick="zoomAttackGraph(0.8)" class="w-8 h-8 rounded-lg bg-[#121620] hover:bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center justify-center transition" title="Zoom Out (-)">
+                <i class="fa-solid fa-minus text-xs"></i>
+              </button>
+              <button onclick="fitAttackGraph()" class="px-2.5 h-8 rounded-lg bg-[#121620] hover:bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center space-x-1.5 transition text-xs font-mono" title="Center & Fit View">
+                <i class="fa-solid fa-crosshairs text-xs"></i><span>Fit View</span>
+              </button>
+              <button onclick="toggleMaximizeAttackGraph()" id="btn-maximize-graph" class="px-3 h-8 rounded-lg bg-cyan-950/40 hover:bg-cyan-900/40 text-cyan-300 border border-cyan-500/30 flex items-center space-x-1.5 transition text-xs font-mono font-bold" title="Maximize Screen">
+                <i class="fa-solid fa-expand text-xs" id="icon-maximize-graph"></i>
+                <span id="text-maximize-graph">Maximize</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="attack-graph-canvas" class="w-full h-[600px] bg-[#07090e] border border-slate-800/80 rounded-xl relative overflow-hidden">
             <!-- Vis.js network is mounted here -->
           </div>
         </div>
@@ -1560,6 +1592,9 @@
     let currentScanData = null;
     let systemCaps = null;
     let attackNetwork = null;
+    let currentGraphLayout = 'hierarchical';
+    let isGraphMaximized = false;
+    let graphResizeObserver = null;
     let currentUser = null;
     let severityChartInstance = null;
     let riskTrendChartInstance = null;
@@ -1720,7 +1755,16 @@
       }
 
       if (viewName === 'attack-surface') {
-        setTimeout(renderAttackGraph, 100);
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            if (attackNetwork) {
+              attackNetwork.redraw();
+              attackNetwork.fit({ animation: true, padding: 60 });
+            } else {
+              renderAttackGraph();
+            }
+          }, 80);
+        });
       }
     }
 
@@ -2833,7 +2877,7 @@
       if (!container) return;
 
       if (!currentScanData || !currentScanData.result || !currentScanData.result.results) {
-        container.innerHTML = `<div class="p-12 text-center text-slate-400">Run or select an assessment to view the interactive MITRE ATT&CK graph.</div>`;
+        container.innerHTML = `<div class="p-12 text-center text-slate-400 font-mono text-xs">Run or select an assessment to view the interactive MITRE ATT&CK topology.</div>`;
         return;
       }
 
@@ -2847,10 +2891,14 @@
         const hostId = idCounter++;
         nodes.push({
           id: hostId,
+          level: 0,
           label: `Host: ${ip}\n[${host.risk_level || 'LOW'}]`,
           shape: 'box',
-          color: { background: '#121620', border: host.risk_level === 'CRITICAL' ? '#ff3344' : '#64748b' },
-          font: { color: '#ffffff', face: 'JetBrains Mono' }
+          shapeProperties: { borderRadius: 8 },
+          margin: { top: 12, bottom: 12, left: 16, right: 16 },
+          widthConstraint: { maximum: 200 },
+          color: { background: '#0e1422', border: host.risk_level === 'CRITICAL' ? '#ff3344' : '#38bdf8' },
+          font: { color: '#f8fafc', face: 'JetBrains Mono', size: 13, bold: true }
         });
 
         (host.ports || []).forEach(p => {
@@ -2858,23 +2906,36 @@
             const portId = idCounter++;
             nodes.push({
               id: portId,
+              level: 1,
               nodeType: 'port',
               ip: ip,
               port: p.port,
               service: p.service,
               risk_level: p.risk_level || 'OPEN',
-              label: `${p.port}/${p.service}\n[${p.risk_level || 'OPEN'}]`,
-              shape: 'ellipse',
-              color: { background: '#181e2b', border: '#ff3344' },
-              font: { color: '#ff4d5a', face: 'JetBrains Mono' }
+              label: `Port ${p.port}/${p.service}\n[${p.risk_level || 'OPEN'}]`,
+              shape: 'box',
+              shapeProperties: { borderRadius: 8 },
+              margin: { top: 10, bottom: 10, left: 14, right: 14 },
+              widthConstraint: { maximum: 200 },
+              color: { background: '#191f30', border: p.risk_level === 'CRITICAL' ? '#ff3344' : '#f59e0b' },
+              font: { color: p.risk_level === 'CRITICAL' ? '#ff6b77' : '#fbbf24', face: 'JetBrains Mono', size: 12 }
             });
-            edges.push({ from: hostId, to: portId, arrows: 'to', label: 'exposes', color: { color: '#ff3344' } });
+            edges.push({
+              from: hostId,
+              to: portId,
+              arrows: { to: { enabled: true, scaleFactor: 0.8 } },
+              label: 'exposes',
+              color: { color: '#38bdf8' },
+              font: { color: '#94a3b8', face: 'JetBrains Mono', size: 10, align: 'top' },
+              smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.3 }
+            });
 
             (host.attack_paths || []).forEach(ap => {
               if (ap.port === p.port) {
                 const vulnId = idCounter++;
                 nodes.push({
                   id: vulnId,
+                  level: 2,
                   nodeType: 'vuln',
                   ip: ip,
                   port: p.port,
@@ -2884,21 +2945,41 @@
                   mitre_techniques: ap.mitre_techniques || [],
                   label: `${ap.service}\n[${ap.impact || 'RCE'}]\nExploit: ${ap.risk_score || ''}`,
                   shape: 'diamond',
-                  color: { background: '#3d0c12', border: '#ff3344' },
-                  font: { color: '#ff4d5a', face: 'JetBrains Mono' }
+                  size: 32,
+                  color: { background: '#3d0c14', border: '#ff3344' },
+                  font: { color: '#ff808b', face: 'JetBrains Mono', size: 11, bold: true }
                 });
-                edges.push({ from: portId, to: vulnId, arrows: 'to', label: 'exploitable', color: { color: '#ff3344' } });
+                edges.push({
+                  from: portId,
+                  to: vulnId,
+                  arrows: { to: { enabled: true, scaleFactor: 0.8 } },
+                  label: 'exploitable',
+                  color: { color: '#ff3344' },
+                  font: { color: '#ff808b', face: 'JetBrains Mono', size: 10, align: 'top' },
+                  smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.3 }
+                });
 
                 (ap.mitre_techniques || []).slice(0, 2).forEach(t => {
                   const mitreId = idCounter++;
                   nodes.push({
                     id: mitreId,
+                    level: 3,
                     label: `MITRE: ${t}`,
                     shape: 'box',
-                    color: { background: '#202738', border: '#ffffff' },
-                    font: { color: '#ffffff', face: 'JetBrains Mono' }
+                    shapeProperties: { borderRadius: 6 },
+                    margin: { top: 8, bottom: 8, left: 12, right: 12 },
+                    widthConstraint: { maximum: 240 },
+                    color: { background: '#251738', border: '#a855f7' },
+                    font: { color: '#e9d5ff', face: 'JetBrains Mono', size: 11 }
                   });
-                  edges.push({ from: vulnId, to: mitreId, arrows: 'to', dashes: true, color: { color: '#94a3b8' } });
+                  edges.push({
+                    from: vulnId,
+                    to: mitreId,
+                    arrows: { to: { enabled: true, scaleFactor: 0.8 } },
+                    dashes: true,
+                    color: { color: '#a855f7' },
+                    smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.3 }
+                  });
                 });
               }
             });
@@ -2907,15 +2988,63 @@
       });
 
       if (nodes.length === 0) {
-        container.innerHTML = `<div class="p-12 text-center text-slate-400">No attack chains or high-risk services found to graph.</div>`;
+        container.innerHTML = `<div class="p-12 text-center text-slate-400 font-mono text-xs">No attack chains or high-risk services found to graph.</div>`;
         return;
       }
 
       const nodesDataSet = new vis.DataSet(nodes);
-      const data = { nodes: nodesDataSet, edges: new vis.DataSet(edges) };
+      const edgesDataSet = new vis.DataSet(edges);
+      const data = { nodes: nodesDataSet, edges: edgesDataSet };
+
+      let layoutConfig = {};
+      let physicsConfig = {};
+
+      if (currentGraphLayout === 'hierarchical') {
+        layoutConfig = {
+          hierarchical: {
+            enabled: true,
+            direction: 'LR',
+            sortMethod: 'directed',
+            levelSeparation: 260,
+            nodeSpacing: 140,
+            treeSpacing: 180,
+            blockShifting: true,
+            edgeMinimization: true,
+            parentCentralization: true
+          }
+        };
+        physicsConfig = {
+          enabled: false
+        };
+      } else {
+        layoutConfig = {
+          improvedLayout: true
+        };
+        physicsConfig = {
+          enabled: true,
+          solver: 'forceAtlas2Based',
+          forceAtlas2Based: {
+            gravitationalConstant: -100,
+            centralGravity: 0.015,
+            springLength: 160,
+            springConstant: 0.08,
+            damping: 0.4,
+            avoidOverlap: 1
+          },
+          stabilization: { iterations: 150, updateInterval: 25, fit: true }
+        };
+      }
+
       const options = {
-        physics: { barnesHut: { gravitationalConstant: -3000, springLength: 120 } },
-        interaction: { hover: true, tooltipDelay: 200 }
+        layout: layoutConfig,
+        physics: physicsConfig,
+        interaction: {
+          hover: true,
+          tooltipDelay: 150,
+          zoomView: true,
+          dragView: true,
+          keyboard: true
+        }
       };
 
       if (attackNetwork) {
@@ -2930,6 +3059,105 @@
           }
         }
       });
+
+      initGraphResizeObserver();
+
+      if (currentGraphLayout === 'hierarchical') {
+        setTimeout(() => {
+          if (attackNetwork) {
+            attackNetwork.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' }, padding: isGraphMaximized ? 80 : 60 });
+          }
+        }, 50);
+      } else {
+        attackNetwork.once('stabilizationIterationsDone', function() {
+          attackNetwork.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' }, padding: isGraphMaximized ? 80 : 60 });
+        });
+      }
+    }
+
+    function setGraphLayout(layoutType) {
+      currentGraphLayout = layoutType;
+      const btnHier = document.getElementById('btn-graph-layout-hierarchical');
+      const btnOrg = document.getElementById('btn-graph-layout-organic');
+      if (btnHier && btnOrg) {
+        if (layoutType === 'hierarchical') {
+          btnHier.className = 'px-2.5 py-1.5 bg-cyan-950/80 text-cyan-300 border border-cyan-500/50 rounded-lg text-xs font-mono font-bold flex items-center space-x-1.5 shadow-sm transition';
+          btnOrg.className = 'px-2.5 py-1.5 bg-[#121620] text-slate-400 border border-slate-700/80 hover:text-white rounded-lg text-xs font-mono flex items-center space-x-1.5 transition';
+        } else {
+          btnOrg.className = 'px-2.5 py-1.5 bg-cyan-950/80 text-cyan-300 border border-cyan-500/50 rounded-lg text-xs font-mono font-bold flex items-center space-x-1.5 shadow-sm transition';
+          btnHier.className = 'px-2.5 py-1.5 bg-[#121620] text-slate-400 border border-slate-700/80 hover:text-white rounded-lg text-xs font-mono flex items-center space-x-1.5 transition';
+        }
+      }
+      renderAttackGraph();
+    }
+
+    function zoomAttackGraph(factor) {
+      if (!attackNetwork) return;
+      const currentScale = attackNetwork.getScale();
+      attackNetwork.moveTo({
+        scale: currentScale * factor,
+        animation: { duration: 250, easingFunction: 'easeInOutQuad' }
+      });
+    }
+
+    function fitAttackGraph() {
+      if (!attackNetwork) return;
+      attackNetwork.fit({
+        animation: { duration: 400, easingFunction: 'easeInOutQuad' },
+        padding: isGraphMaximized ? 80 : 60
+      });
+    }
+
+    function toggleMaximizeAttackGraph() {
+      const card = document.getElementById('attack-graph-card');
+      const canvas = document.getElementById('attack-graph-canvas');
+      const icon = document.getElementById('icon-maximize-graph');
+      const text = document.getElementById('text-maximize-graph');
+      if (!card || !canvas) return;
+
+      isGraphMaximized = !isGraphMaximized;
+      if (isGraphMaximized) {
+        card.classList.add('fixed', 'inset-0', 'z-50', 'w-screen', 'h-screen', 'rounded-none', 'border-none', 'p-6', 'bg-[#07090e]/98', 'backdrop-blur-2xl', 'flex', 'flex-col', 'space-y-4');
+        canvas.classList.remove('h-[600px]');
+        canvas.classList.add('flex-1', 'w-full', 'min-h-0');
+        if (icon) icon.className = 'fa-solid fa-compress text-xs';
+        if (text) text.innerText = 'Minimize (Esc)';
+        window.addEventListener('keydown', handleGraphMaximizeKey);
+      } else {
+        card.classList.remove('fixed', 'inset-0', 'z-50', 'w-screen', 'h-screen', 'rounded-none', 'border-none', 'p-6', 'bg-[#07090e]/98', 'backdrop-blur-2xl', 'flex', 'flex-col', 'space-y-4');
+        canvas.classList.remove('flex-1', 'w-full', 'min-h-0');
+        canvas.classList.add('h-[600px]');
+        if (icon) icon.className = 'fa-solid fa-expand text-xs';
+        if (text) text.innerText = 'Maximize';
+        window.removeEventListener('keydown', handleGraphMaximizeKey);
+      }
+
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (attackNetwork) {
+            attackNetwork.redraw();
+            attackNetwork.fit({ animation: { duration: 350 }, padding: isGraphMaximized ? 80 : 60 });
+          }
+        }, 100);
+      });
+    }
+
+    function handleGraphMaximizeKey(e) {
+      if (e.key === 'Escape' && isGraphMaximized) {
+        toggleMaximizeAttackGraph();
+      }
+    }
+
+    function initGraphResizeObserver() {
+      const canvas = document.getElementById('attack-graph-canvas');
+      if (!canvas || graphResizeObserver) return;
+      graphResizeObserver = new ResizeObserver(() => {
+        if (attackNetwork) {
+          attackNetwork.redraw();
+        }
+      });
+      graphResizeObserver.observe(canvas);
+    }
     }
 
     // ─── Threat Node Inspector ───
