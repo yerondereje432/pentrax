@@ -2190,6 +2190,16 @@ def is_private_ip(ip_str):
     except:
         return False
 
+def is_ip_address(val: Any) -> bool:
+    """Check if a value represents a valid IPv4 or IPv6 address string."""
+    if not val:
+        return False
+    try:
+        ipaddress.ip_address(str(val).strip())
+        return True
+    except (ValueError, AttributeError):
+        return False
+
 def check_scope(target_str, authorized=False, hosts=None, allow_networks=None):
     """Authorization gate. Fails closed.
 

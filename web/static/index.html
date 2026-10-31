@@ -926,7 +926,7 @@
       <!-- ===================================================================== -->
       <!-- VIEW 5: ATTACK SURFACE (MITRE ATT&CK Vis-Network Graph)              -->
       <!-- ===================================================================== -->
-      <div id="view-attack-surface" class="app-view space-y-6 max-w-7xl mx-auto hidden">
+      <div id="view-attack-surface" class="app-view space-y-4 w-full max-w-full px-2 sm:px-4 hidden">
         
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800">
           <div>
@@ -971,7 +971,7 @@
             </div>
           </div>
 
-          <div id="attack-graph-canvas" class="w-full h-[600px] bg-[#07090e] border border-slate-800/80 rounded-xl relative overflow-hidden">
+          <div id="attack-graph-canvas" class="w-full h-[calc(100vh-230px)] min-h-[620px] bg-[#07090e] border border-slate-800/80 rounded-xl relative overflow-hidden">
             <!-- Vis.js network is mounted here -->
           </div>
         </div>
@@ -1758,8 +1758,7 @@
         requestAnimationFrame(() => {
           setTimeout(() => {
             if (attackNetwork) {
-              attackNetwork.redraw();
-              attackNetwork.fit({ animation: true, padding: 60 });
+              centerAndFitGraph(60);
             } else {
               renderAttackGraph();
             }
@@ -2996,6 +2995,22 @@
       const edgesDataSet = new vis.DataSet(edges);
       const data = { nodes: nodesDataSet, edges: edgesDataSet };
 
+      // Calculate level metrics so the graph naturally fills the middle of the available canvas space
+      const canvasWidth = container.clientWidth || (window.innerWidth - 300) || 1200;
+      const canvasHeight = container.clientHeight || (window.innerHeight - 250) || 700;
+
+      const levelCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+      nodes.forEach(n => {
+        const lvl = typeof n.level === 'number' ? n.level : 0;
+        levelCounts[lvl] = (levelCounts[lvl] || 0) + 1;
+      });
+      const maxNodesInLevel = Math.max(...Object.values(levelCounts), 1);
+
+      // Dynamically calculate level separation and node spacing to stretch across the full available space
+      const dynamicLevelSep = Math.max(260, Math.min(480, Math.floor((canvasWidth - 320) / 3)));
+      const dynamicNodeSpacing = Math.max(140, Math.min(260, Math.floor((canvasHeight - 200) / Math.max(maxNodesInLevel, 2))));
+      const dynamicTreeSpacing = Math.max(180, Math.min(320, Math.floor((canvasHeight - 160) / 2)));
+
       let layoutConfig = {};
       let physicsConfig = {};
 
@@ -3005,9 +3020,9 @@
             enabled: true,
             direction: 'LR',
             sortMethod: 'directed',
-            levelSeparation: 260,
-            nodeSpacing: 140,
-            treeSpacing: 180,
+            levelSeparation: dynamicLevelSep,
+            nodeSpacing: dynamicNodeSpacing,
+            treeSpacing: dynamicTreeSpacing,
             blockShifting: true,
             edgeMinimization: true,
             parentCentralization: true
@@ -3024,11 +3039,11 @@
           enabled: true,
           solver: 'forceAtlas2Based',
           forceAtlas2Based: {
-            gravitationalConstant: -100,
-            centralGravity: 0.015,
-            springLength: 160,
+            gravitationalConstant: -140,
+            centralGravity: 0.02,
+            springLength: Math.max(180, Math.min(280, Math.floor(Math.min(canvasWidth, canvasHeight) / 3))),
             springConstant: 0.08,
-            damping: 0.4,
+            damping: 0.5,
             avoidOverlap: 1
           },
           stabilization: { iterations: 150, updateInterval: 25, fit: true }
@@ -3051,6 +3066,8 @@
         attackNetwork.destroy();
       }
       attackNetwork = new vis.Network(container, data, options);
+      attackNetwork.setSize(canvasWidth + 'px', canvasHeight + 'px');
+
       attackNetwork.on('click', function(params) {
         if (params.nodes && params.nodes.length > 0) {
           const selectedNode = nodesDataSet.get(params.nodes[0]);
@@ -3063,16 +3080,34 @@
       initGraphResizeObserver();
 
       if (currentGraphLayout === 'hierarchical') {
-        setTimeout(() => {
-          if (attackNetwork) {
-            attackNetwork.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' }, padding: isGraphMaximized ? 80 : 60 });
-          }
-        }, 50);
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            centerAndFitGraph(isGraphMaximized ? 80 : 60);
+          }, 60);
+        });
       } else {
         attackNetwork.once('stabilizationIterationsDone', function() {
-          attackNetwork.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' }, padding: isGraphMaximized ? 80 : 60 });
+          centerAndFitGraph(isGraphMaximized ? 80 : 60);
         });
       }
+    }
+
+    function centerAndFitGraph(padding = 60) {
+      if (!attackNetwork) return;
+      const container = document.getElementById('attack-graph-canvas');
+      if (!container) return;
+
+      const w = container.clientWidth || (window.innerWidth - 300);
+      const h = container.clientHeight || (window.innerHeight - 250);
+
+      // Force Vis.js canvas to synchronize with DOM container dimensions so origin (0,0) is centered
+      attackNetwork.setSize(w + 'px', h + 'px');
+      attackNetwork.redraw();
+
+      attackNetwork.fit({
+        animation: { duration: 400, easingFunction: 'easeInOutQuad' },
+        padding: padding
+      });
     }
 
     function setGraphLayout(layoutType) {
@@ -3101,11 +3136,7 @@
     }
 
     function fitAttackGraph() {
-      if (!attackNetwork) return;
-      attackNetwork.fit({
-        animation: { duration: 400, easingFunction: 'easeInOutQuad' },
-        padding: isGraphMaximized ? 80 : 60
-      });
+      centerAndFitGraph(isGraphMaximized ? 80 : 60);
     }
 
     function toggleMaximizeAttackGraph() {
@@ -3118,15 +3149,15 @@
       isGraphMaximized = !isGraphMaximized;
       if (isGraphMaximized) {
         card.classList.add('fixed', 'inset-0', 'z-50', 'w-screen', 'h-screen', 'rounded-none', 'border-none', 'p-6', 'bg-[#07090e]/98', 'backdrop-blur-2xl', 'flex', 'flex-col', 'space-y-4');
-        canvas.classList.remove('h-[600px]');
-        canvas.classList.add('flex-1', 'w-full', 'min-h-0');
+        canvas.classList.remove('h-[calc(100vh-230px)]', 'min-h-[620px]');
+        canvas.classList.add('flex-1', 'w-full', 'h-full', 'min-h-0');
         if (icon) icon.className = 'fa-solid fa-compress text-xs';
         if (text) text.innerText = 'Minimize (Esc)';
         window.addEventListener('keydown', handleGraphMaximizeKey);
       } else {
         card.classList.remove('fixed', 'inset-0', 'z-50', 'w-screen', 'h-screen', 'rounded-none', 'border-none', 'p-6', 'bg-[#07090e]/98', 'backdrop-blur-2xl', 'flex', 'flex-col', 'space-y-4');
-        canvas.classList.remove('flex-1', 'w-full', 'min-h-0');
-        canvas.classList.add('h-[600px]');
+        canvas.classList.remove('flex-1', 'h-full', 'min-h-0');
+        canvas.classList.add('h-[calc(100vh-230px)]', 'min-h-[620px]', 'w-full');
         if (icon) icon.className = 'fa-solid fa-expand text-xs';
         if (text) text.innerText = 'Maximize';
         window.removeEventListener('keydown', handleGraphMaximizeKey);
@@ -3134,10 +3165,7 @@
 
       requestAnimationFrame(() => {
         setTimeout(() => {
-          if (attackNetwork) {
-            attackNetwork.redraw();
-            attackNetwork.fit({ animation: { duration: 350 }, padding: isGraphMaximized ? 80 : 60 });
-          }
+          centerAndFitGraph(isGraphMaximized ? 80 : 60);
         }, 100);
       });
     }
@@ -3153,11 +3181,10 @@
       if (!canvas || graphResizeObserver) return;
       graphResizeObserver = new ResizeObserver(() => {
         if (attackNetwork) {
-          attackNetwork.redraw();
+          centerAndFitGraph(isGraphMaximized ? 80 : 60);
         }
       });
       graphResizeObserver.observe(canvas);
-    }
     }
 
     // ─── Threat Node Inspector ───

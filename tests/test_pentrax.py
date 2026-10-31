@@ -557,6 +557,45 @@ class TestTargetParsing(unittest.TestCase):
             self.assertEqual(ips, ["93.184.216.34"])
             mock_resolve.assert_called_with("example.com")
 
+    def test_is_ip_address_detection(self):
+        # Valid IPv4
+        self.assertTrue(ys.is_ip_address("127.0.0.1"))
+        self.assertTrue(ys.is_ip_address("192.168.1.1"))
+        self.assertTrue(ys.is_ip_address("76.76.21.21"))
+        self.assertTrue(ys.is_ip_address("  10.0.0.1  "))
+
+        # Valid IPv6
+        self.assertTrue(ys.is_ip_address("::1"))
+        self.assertTrue(ys.is_ip_address("2001:db8::1"))
+        self.assertTrue(ys.is_ip_address("fe80::1ff:fe23:4567:890a"))
+
+        # Domains and URLs (should be False)
+        self.assertFalse(ys.is_ip_address("fostradingplc.vercel.app"))
+        self.assertFalse(ys.is_ip_address("example.com"))
+        self.assertFalse(ys.is_ip_address("https://127.0.0.1/"))
+        self.assertFalse(ys.is_ip_address("127.0.0.1:8080"))
+        self.assertFalse(ys.is_ip_address(""))
+        self.assertFalse(ys.is_ip_address(None))
+
+    def test_vhost_determination(self):
+        # When target_hostname is a domain, vhost should be target_hostname
+        target_hostname = "fostradingplc.vercel.app"
+        ip = "76.76.21.21"
+        vhost = target_hostname if target_hostname and not ys.is_ip_address(target_hostname) else ip
+        self.assertEqual(vhost, "fostradingplc.vercel.app")
+
+        # When target_hostname is an IP, vhost should fallback to ip
+        target_hostname = "127.0.0.1"
+        ip = "127.0.0.1"
+        vhost = target_hostname if target_hostname and not ys.is_ip_address(target_hostname) else ip
+        self.assertEqual(vhost, "127.0.0.1")
+
+        # When target_hostname is None/empty, vhost should fallback to ip
+        target_hostname = ""
+        ip = "10.0.0.5"
+        vhost = target_hostname if target_hostname and not ys.is_ip_address(target_hostname) else ip
+        self.assertEqual(vhost, "10.0.0.5")
+
 
 if __name__ == "__main__":
     unittest.main()
