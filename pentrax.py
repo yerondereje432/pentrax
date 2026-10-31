@@ -57,6 +57,7 @@ import hashlib
 import html as _html
 import platform
 import logging
+import urllib.parse
 import importlib.util
 from datetime import datetime
 from collections import defaultdict
@@ -2269,35 +2270,98 @@ def resolve_hostname(hostname):
     
     return []
 
+def extract_target_hostname(target_str: str) -> str:
+    """Extract clean domain/hostname or IP from target string, stripping URLs, schemes, paths, and ports."""
+    target_str = (target_str or "").strip()
+    if not target_str:
+        return ""
+
+    # 1. Target with explicit scheme (e.g. https://fostradingplc.vercel.app/ or ws://host:8080)
+    if "://" in target_str:
+        parsed = urllib.parse.urlparse(target_str)
+        if parsed.hostname:
+            return parsed.hostname
+        part = target_str.split("://", 1)[1].split("/", 1)[0].split("?", 1)[0]
+        if ":" in part and not part.startswith("["):
+            part = part.split(":", 1)[0]
+        return part.strip()
+
+    # 2. Target with path or query (e.g. fostradingplc.vercel.app/path or host:8080/path)
+    if "/" in target_str:
+        # Check if it is a CIDR network like 192.168.1.0/24 or 2001:db8::/32
+        try:
+            ipaddress.ip_network(target_str, strict=False)
+            return target_str  # Keep CIDR intact
+        except ValueError:
+            parsed = urllib.parse.urlparse("//" + target_str)
+            if parsed.hostname:
+                return parsed.hostname
+            part = target_str.split("/", 1)[0]
+            if ":" in part and not part.startswith("["):
+                part = part.split(":", 1)[0]
+            return part.strip()
+
+    # 3. Target with port notation (e.g. example.com:8080) but not bare IPv6
+    if ":" in target_str and not target_str.startswith("["):
+        try:
+            ipaddress.ip_address(target_str)
+            return target_str
+        except ValueError:
+            return target_str.split(":", 1)[0].strip()
+
+    return target_str
+
+
 def parse_target(target_str, ipv6=False):
-    """Parse target specification (IP, CIDR, hostname) into list of IPs."""
-    # Try CIDR
-    try:
-        if "/" in target_str:
-            network = ipaddress.ip_network(target_str, strict=False)
-            return [str(h) for h in network.hosts()]
-    except ValueError:
-        pass
-    
-    # Try single IP
-    try:
-        ip = ipaddress.ip_address(target_str)
-        return [str(ip)]
-    except ValueError:
-        pass
-    
-    # Try hostname resolution
-    ips = resolve_hostname(target_str)
-    if ips:
-        return ips
-    
+    """Parse target specification (IP, CIDR, hostname, URL) into list of IPs."""
+    target_str = (target_str or "").strip()
+    if not target_str:
+        return []
+
     # Try comma-separated list
     if "," in target_str:
         all_ips = []
         for part in target_str.split(","):
             part = part.strip()
-            all_ips.extend(parse_target(part, ipv6))
-        return all_ips
+            if part:
+                all_ips.extend(parse_target(part, ipv6))
+        return list(dict.fromkeys(all_ips))
+
+    # Try CIDR (ensure it's not a URL scheme like http:// or https://)
+    try:
+        if "/" in target_str and not target_str.startswith(("http://", "https://", "ws://", "wss://")):
+            network = ipaddress.ip_network(target_str, strict=False)
+            return [str(h) for h in network.hosts()]
+    except ValueError:
+        pass
+    
+    # Try single IP directly
+    try:
+        ip = ipaddress.ip_address(target_str)
+        return [str(ip)]
+    except ValueError:
+        pass
+
+    # Extract clean host (handles URLs, path suffixes, port specifications)
+    clean_host = extract_target_hostname(target_str)
+
+    # Try single IP on clean_host
+    try:
+        ip = ipaddress.ip_address(clean_host)
+        return [str(ip)]
+    except ValueError:
+        pass
+
+    # Try hostname resolution on clean_host
+    ips = resolve_hostname(clean_host)
+    if ips:
+        return ips
+    
+    # Fallback: try raw target_str if clean_host differed
+    if clean_host != target_str:
+        ips = resolve_hostname(target_str)
+        if ips:
+            return ips
     
     print(f"  {C.R}[!] Could not parse target: {target_str}{C.E}")
     return []
@@ -4086,6 +4150,7 @@ async def run_deep_intel(
     enable_fuzz=True,
     cookie=None,
     custom_header=None,
+    target_hostname=None,
 ):
     """Run deep enumeration, Web DAST, templates, crawler, fuzzer, and SSL/TLS audits on all open ports."""
     sem = asyncio.Semaphore(concurrency)
@@ -4127,8 +4192,11 @@ async def run_deep_intel(
             is_web = entry.port in http_ports or "HTTP" in (entry.service or "").upper()
             is_tls = entry.port in (443, 8443, 2083, 2087, 2096) or "HTTPS" in (entry.service or "").upper()
 
+            # Preserve domain/vhost for cloud targets (Vercel, Cloudflare, etc.)
+            vhost = target_hostname if target_hostname and not is_ip_address(target_hostname) else ip
+
             if enable_dast and is_web:
-                dast_vulns, dast_data = await audit_web_dast(ip, entry.port, timeout=min(timeout, 2.5))
+                dast_vulns, dast_data = await audit_web_dast(ip, entry.port, timeout=min(timeout, 2.5), hostname=vhost)
                 if dast_vulns:
                     entry.vulns.extend(dast_vulns)
                     stats["vulns_found"] += len(dast_vulns)
@@ -4149,7 +4217,7 @@ async def run_deep_intel(
                 if yaml_template_engine:
                     try:
                         tmpl_findings = await yaml_template_engine.run_http_probes(
-                            ip,
+                            vhost,
                             port=entry.port,
                             use_ssl=is_tls,
                             timeout=min(timeout, 3.0),
@@ -4189,7 +4257,7 @@ async def run_deep_intel(
                     try:
                         scheme = "https" if is_tls else "http"
                         crawler = AsyncWebCrawler(
-                            f"{scheme}://{ip}:{entry.port}",
+                            f"{scheme}://{vhost}:{entry.port}",
                             max_depth=2,
                             max_pages=25,
                             timeout=min(timeout, 3.0),
@@ -5206,6 +5274,7 @@ async def amain(args, event_callback=None):
         enable_fuzz = getattr(args, "fuzz", True)
         cookie = getattr(args, "cookie", None)
         custom_header = getattr(args, "header", None)
+        target_vhost = extract_target_hostname(getattr(args, "target", ""))
         await run_deep_intel(
             list(results.keys()),
             timeout=5.0,
@@ -5216,6 +5285,7 @@ async def amain(args, event_callback=None):
             enable_fuzz=enable_fuzz,
             cookie=cookie,
             custom_header=custom_header,
+            target_hostname=target_vhost,
         )
         print(f"  {C.G}{C.BOLD}✓ Deep probed {stats['deep_probes']} services{C.E}")
         if stats['vulns_found'] > 0:

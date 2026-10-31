@@ -1519,6 +1519,38 @@
     </div>
   </div>
 
+  <!-- 6. CUSTOM CYBER CONFIRMATION MODAL -->
+  <div id="modal-confirm-dialog" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#0b0e14] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
+      <div class="flex items-start space-x-3.5">
+        <div id="confirm-dialog-icon-wrap" class="w-10 h-10 rounded-xl bg-red-950/80 border border-red-500/30 flex items-center justify-center text-pentrax-red flex-shrink-0 text-lg">
+          <i id="confirm-dialog-icon" class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+        <div class="space-y-1 flex-1">
+          <h3 id="confirm-dialog-title" class="text-base font-extrabold text-white">Confirm Action</h3>
+          <p id="confirm-dialog-message" class="text-xs text-slate-300 leading-relaxed">Are you sure you want to proceed?</p>
+          <div id="confirm-dialog-chip" class="hidden pt-1">
+            <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-red-950/60 text-red-400 border border-red-800/40 font-bold" id="confirm-dialog-chip-text"></span>
+          </div>
+        </div>
+      </div>
+      <div class="p-3 bg-red-950/30 border border-red-900/40 rounded-xl text-[11px] text-red-300 flex items-center space-x-2">
+        <i class="fa-solid fa-circle-exclamation text-pentrax-red text-xs flex-shrink-0"></i>
+        <span>This operational action cannot be undone.</span>
+      </div>
+      <div class="flex items-center justify-end space-x-2.5 pt-2">
+        <button id="confirm-dialog-cancel" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition">Cancel</button>
+        <button id="confirm-dialog-ok" class="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-bold text-xs shadow-lg shadow-red-950 transition flex items-center space-x-1.5">
+          <i class="fa-solid fa-check text-xs"></i>
+          <span id="confirm-dialog-btn-text">Confirm</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLOATING TOAST NOTIFICATION HUB -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2.5 max-w-sm pointer-events-none"></div>
+
   <!-- ===================================================================== -->
   <!-- JAVASCRIPT APPLICATION CORE & CONTROLLER                              -->
   <!-- ===================================================================== -->
@@ -1532,6 +1564,107 @@
     let severityChartInstance = null;
     let riskTrendChartInstance = null;
     let activeMainView = 'dashboard';
+
+    // ─── Cyber Toast Notification System ───
+    function showToast(message, type = 'info', duration = 4500) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = 'pointer-events-auto transform transition-all duration-300 ease-out translate-y-3 opacity-0 flex items-start space-x-3 p-3.5 rounded-xl backdrop-blur-md shadow-2xl border text-xs';
+      
+      let icon = 'fa-circle-info text-cyan-400';
+      let border = 'border-cyan-500/30 bg-[#06111e]/95 text-cyan-100';
+      if (type === 'error') {
+        icon = 'fa-triangle-exclamation text-pentrax-red';
+        border = 'border-red-500/40 bg-[#160608]/95 text-red-100 shadow-red-950/50';
+      } else if (type === 'success') {
+        icon = 'fa-circle-check text-emerald-400';
+        border = 'border-emerald-500/40 bg-[#04160b]/95 text-emerald-100 shadow-emerald-950/40';
+      } else if (type === 'warning') {
+        icon = 'fa-circle-exclamation text-amber-400';
+        border = 'border-amber-500/40 bg-[#171105]/95 text-amber-100 shadow-amber-950/40';
+      }
+
+      toast.className += ` ${border}`;
+      toast.innerHTML = `
+        <i class="fa-solid ${icon} text-sm mt-0.5 flex-shrink-0"></i>
+        <div class="flex-1 leading-snug break-words">${escapeHtml(message)}</div>
+        <button class="text-slate-400 hover:text-white transition ml-2 flex-shrink-0 text-sm leading-none">&times;</button>
+      `;
+
+      const closeBtn = toast.querySelector('button');
+      const dismiss = () => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      };
+      closeBtn.onclick = dismiss;
+
+      container.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-3', 'opacity-0');
+      });
+
+      if (duration > 0) {
+        setTimeout(dismiss, duration);
+      }
+    }
+
+    // ─── Custom Cyber Confirmation Dialog ───
+    function showConfirmDialog({ title = 'Confirm Action', message = 'Are you sure?', itemName = '', confirmText = 'Confirm', isDanger = true }) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('modal-confirm-dialog');
+        const titleEl = document.getElementById('confirm-dialog-title');
+        const msgEl = document.getElementById('confirm-dialog-message');
+        const chipWrap = document.getElementById('confirm-dialog-chip');
+        const chipText = document.getElementById('confirm-dialog-chip-text');
+        const btnText = document.getElementById('confirm-dialog-btn-text');
+        const okBtn = document.getElementById('confirm-dialog-ok');
+        const cancelBtn = document.getElementById('confirm-dialog-cancel');
+
+        titleEl.innerText = title;
+        msgEl.innerText = message;
+        btnText.innerText = confirmText;
+
+        if (itemName) {
+          chipWrap.classList.remove('hidden');
+          chipText.innerText = itemName;
+        } else {
+          chipWrap.classList.add('hidden');
+        }
+
+        modal.classList.remove('hidden');
+
+        const cleanup = () => {
+          modal.classList.add('hidden');
+          window.removeEventListener('keydown', handleKey);
+          okBtn.onclick = null;
+          cancelBtn.onclick = null;
+        };
+
+        const handleKey = (e) => {
+          if (e.key === 'Escape') {
+            cleanup();
+            resolve(false);
+          } else if (e.key === 'Enter') {
+            cleanup();
+            resolve(true);
+          }
+        };
+
+        okBtn.onclick = () => {
+          cleanup();
+          resolve(true);
+        };
+
+        cancelBtn.onclick = () => {
+          cleanup();
+          resolve(false);
+        };
+
+        window.addEventListener('keydown', handleKey);
+      });
+    }
 
     document.addEventListener('DOMContentLoaded', async () => {
       updateLiveDateIndicator();
@@ -2208,7 +2341,7 @@
       if (ports === 'custom') {
         const customVal = (document.getElementById('scan-ports-custom').value || '').trim();
         if (!customVal) {
-          alert('Please enter a custom port range or list (e.g. 135,139,445,3389).');
+          showToast('Please enter a custom port range or list (e.g. 135,139,445,3389).', 'warning');
           return;
         }
         ports = customVal;
@@ -2268,7 +2401,7 @@
 
         const data = await res.json();
         if (!res.ok) {
-          alert('Failed to start scan: ' + (data.error || 'Unknown error'));
+          showToast('Failed to start scan: ' + (data.error || 'Unknown error'), 'error');
           submitBtn.disabled = false;
           submitBtn.innerHTML = `<i class="fa-solid fa-play"></i><span>BEGIN ASSESSMENT</span>`;
           return;
@@ -2281,7 +2414,7 @@
         switchMainView('assessments');
         connectScanWebSocket(data.scan.id);
       } catch (err) {
-        alert('Error initiating scan: ' + err.message);
+        showToast('Error initiating scan: ' + err.message, 'error');
         submitBtn.disabled = false;
         submitBtn.innerHTML = `<i class="fa-solid fa-play"></i><span>BEGIN ASSESSMENT</span>`;
       }
@@ -2428,7 +2561,14 @@
 
     async function stopCurrentScan() {
       if (!activeScanId) return;
-      if (!confirm('Are you sure you want to stop the active scan?')) return;
+      const ok = await showConfirmDialog({
+        title: 'Stop Active Scan',
+        message: 'Are you sure you want to abort the currently running assessment?',
+        itemName: activeScanId,
+        confirmText: 'Stop Scan',
+        isDanger: true
+      });
+      if (!ok) return;
       const stopButton = document.getElementById('btn-stop-scan');
       stopButton.disabled = true;
       stopButton.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Stopping...</span>`;
@@ -2459,7 +2599,7 @@
       } catch (error) {
         stopButton.disabled = false;
         stopButton.innerHTML = `<i class="fa-solid fa-hand"></i><span>Stop Scan</span>`;
-        alert(`Failed to stop scan: ${error.message}`);
+        showToast(`Failed to stop scan: ${error.message}`, 'error');
       }
     }
 
@@ -2829,9 +2969,10 @@
       try {
         await navigator.clipboard.writeText(curlCmd);
         btnText.innerText = 'Copied!';
+        showToast('Copied cURL command to clipboard!', 'success');
         setTimeout(() => { btnText.innerText = 'Copy'; }, 2000);
       } catch (err) {
-        alert('Copied: ' + curlCmd);
+        showToast('Copied: ' + curlCmd, 'info');
       }
     }
 
@@ -2941,9 +3082,10 @@
         document.getElementById('sched-name').value = '';
         document.getElementById('sched-target').value = '';
         document.getElementById('sched-webhook').value = '';
+        showToast('Automated perimeter monitor registered!', 'success');
         await loadSchedulesList();
       } catch (err) {
-        alert('Error creating monitor: ' + err.message);
+        showToast('Error creating monitor: ' + err.message, 'error');
       }
     }
 
@@ -2951,21 +3093,29 @@
       try {
         const res = await fetch(`/api/schedules/${id}/trigger`, { method: 'POST' });
         const data = await res.json();
-        alert(`Perimeter scan triggered! Scan ID: ${data.scan_id}`);
+        showToast(`Perimeter scan triggered! Scan ID: ${data.scan_id}`, 'success');
         closeSchedulesModal();
         await loadScanHistory();
       } catch (err) {
-        alert('Failed to trigger scan: ' + err.message);
+        showToast('Failed to trigger scan: ' + err.message, 'error');
       }
     }
 
     async function deleteScheduleItem(id) {
-      if (!confirm('Delete this automated perimeter schedule?')) return;
+      const ok = await showConfirmDialog({
+        title: 'Delete Perimeter Monitor',
+        message: 'Permanently remove this automated perimeter schedule?',
+        itemName: id,
+        confirmText: 'Delete Schedule',
+        isDanger: true
+      });
+      if (!ok) return;
       try {
         await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
+        showToast('Automated perimeter schedule deleted.', 'success');
         await loadSchedulesList();
       } catch (err) {
-        alert('Failed to delete schedule: ' + err.message);
+        showToast('Failed to delete schedule: ' + err.message, 'error');
       }
     }
 
@@ -3045,7 +3195,7 @@
 
     async function viewScanHistoryItem(scanId) {
       const res = await fetch(`/api/scans/${scanId}`);
-      if (!res.ok) return alert('Failed to retrieve scan data');
+      if (!res.ok) return showToast('Failed to retrieve scan data', 'error');
       const data = await res.json();
       currentScanData = data;
       activeScanId = scanId;
@@ -3062,13 +3212,21 @@
     }
 
     async function deleteScanHistoryItem(scanId) {
-      if (!confirm(`Permanently delete assessment ${scanId}?`)) return;
+      const ok = await showConfirmDialog({
+        title: 'Delete Assessment',
+        message: 'Permanently purge all scan logs, telemetry, and vulnerability findings for this assessment?',
+        itemName: scanId,
+        confirmText: 'Delete Assessment',
+        isDanger: true
+      });
+      if (!ok) return;
       const res = await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || 'Failed to delete scan: permission denied');
+        showToast(data.error || 'Failed to delete scan: permission denied', 'error');
         return;
       }
+      showToast('Assessment deleted successfully.', 'success');
       await loadScanHistory(currentHistoryPage);
     }
 
@@ -3109,14 +3267,14 @@
     async function computeScanDiff() {
       const scanA = document.getElementById('diff-select-a').value;
       const scanB = document.getElementById('diff-select-b').value;
-      if (!scanA || !scanB) return alert('Please select two scans to compare.');
-      if (scanA === scanB) return alert('Please select two distinct scans.');
+      if (!scanA || !scanB) return showToast('Please select two scans to compare.', 'warning');
+      if (scanA === scanB) return showToast('Please select two distinct scans.', 'warning');
 
       try {
         const res = await fetch(`/api/scans/${scanA}/diff/${scanB}`);
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          return alert(err.error || 'Failed to compute diff');
+          return showToast(err.error || 'Failed to compute diff', 'error');
         }
         const diff = await res.json();
         
@@ -3148,7 +3306,7 @@
         document.getElementById('diff-results-container').classList.remove('hidden');
       } catch (err) {
         console.error('Diff error:', err);
-        alert('Failed to compute drift: ' + err.message);
+        showToast('Failed to compute drift: ' + err.message, 'error');
       }
     }
 
@@ -3156,7 +3314,7 @@
     async function executePassiveRecon() {
       const domainInput = document.getElementById('recon-domain-input');
       const target = domainInput.value.trim();
-      if (!target) return alert('Please enter a target domain or hostname');
+      if (!target) return showToast('Please enter a target domain or hostname', 'warning');
 
       const btn = document.getElementById('btn-recon-run');
       btn.disabled = true;
@@ -3226,7 +3384,7 @@
         document.getElementById('recon-results-card').classList.remove('hidden');
       } catch (err) {
         console.error('Recon error:', err);
-        alert('OSINT reconnaissance error: ' + err.message);
+        showToast('OSINT reconnaissance error: ' + err.message, 'error');
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<i class="fa-solid fa-bolt"></i><span>Scan OSINT</span>`;
@@ -3236,14 +3394,14 @@
     // ─── Export Operations ───
     function exportReport(format) {
       if (!activeScanId) {
-        return alert('Please select or run an assessment before exporting.');
+        return showToast('Please select or run an assessment before exporting.', 'warning');
       }
       window.open(`/api/scans/${activeScanId}/export/${format}`, '_blank');
     }
 
     async function copyMarkdownReport() {
       if (!activeScanId) {
-        return alert('Please select or run an assessment before copying.');
+        return showToast('Please select or run an assessment before copying.', 'warning');
       }
       const copyBtnText = document.getElementById('copy-btn-text');
       try {
@@ -3252,10 +3410,11 @@
         const text = await res.text();
         await navigator.clipboard.writeText(text);
         if (copyBtnText) copyBtnText.textContent = 'Copied!';
+        showToast('Report copied to clipboard as Markdown!', 'success');
         setTimeout(() => { if (copyBtnText) copyBtnText.textContent = 'Copy'; }, 2000);
       } catch (err) {
         console.error('Clipboard copy failed:', err);
-        alert('Failed to copy to clipboard. Downloading Markdown instead.');
+        showToast('Failed to copy to clipboard. Downloading Markdown instead.', 'warning');
         exportReport('md');
       }
     }

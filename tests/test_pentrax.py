@@ -521,5 +521,42 @@ class TestCSVHardening(unittest.TestCase):
                 os.remove(temp_path)
 
 
+
+class TestTargetParsing(unittest.TestCase):
+    """Test URL target stripping, hostname extraction, and virtual host resolution."""
+
+    def test_extract_target_hostname_variations(self):
+        cases = [
+            ("https://fostradingplc.vercel.app/", "fostradingplc.vercel.app"),
+            ("http://testphp.vulnweb.com/index.php", "testphp.vulnweb.com"),
+            ("https://example.com:8443/api/v1?query=test#section", "example.com"),
+            ("domain.com/path/to/resource", "domain.com"),
+            ("192.168.1.100:8080", "192.168.1.100"),
+            ("https://10.0.0.1/admin", "10.0.0.1"),
+            ("http://[::1]:8080/test", "::1"),
+            ("example.org", "example.org"),
+            ("127.0.0.1", "127.0.0.1"),
+            ("   https://target.local/path   ", "target.local"),
+        ]
+        for raw, expected in cases:
+            self.assertEqual(ys.extract_target_hostname(raw), expected, f"Failed for {raw}")
+
+    def test_parse_target_with_full_url(self):
+        with mock.patch.object(ys, "resolve_hostname", return_value=["76.76.21.21"]) as mock_resolve:
+            ips = ys.parse_target("https://fostradingplc.vercel.app/")
+            self.assertEqual(ips, ["76.76.21.21"])
+            mock_resolve.assert_called_with("fostradingplc.vercel.app")
+
+    def test_parse_target_with_url_ip_and_port(self):
+        ips = ys.parse_target("https://127.0.0.1:9999/admin/login")
+        self.assertEqual(ips, ["127.0.0.1"])
+
+    def test_parse_target_with_domain_and_path(self):
+        with mock.patch.object(ys, "resolve_hostname", return_value=["93.184.216.34"]) as mock_resolve:
+            ips = ys.parse_target("example.com/api/v1/health")
+            self.assertEqual(ips, ["93.184.216.34"])
+            mock_resolve.assert_called_with("example.com")
+
+
 if __name__ == "__main__":
     unittest.main()
